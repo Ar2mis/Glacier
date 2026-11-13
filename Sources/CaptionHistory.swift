@@ -99,6 +99,9 @@ struct LiveCaptionBuffer {
     }
     func context(before id: String) -> [TranslationPair] {
         guard let index = entries.firstIndex(where: { $0.id == id }) else { return [] }
-        return entries[..<index].filter { !$0.chinese.isEmpty }.suffix(4).map { .init(english: $0.translatedSource.isEmpty ? $0.english : $0.translatedSource, chinese: $0.chinese) }
+        // Only include completed pairs: .chinese non-empty and .translatedSource non-empty
+        return entries[..<index].filter { !$0.chinese.isEmpty && !$0.translatedSource.isEmpty }
+            .suffix(4)
+            .map { .init(english: $0.translatedSource, chinese: $0.chinese) }
     }
 }
