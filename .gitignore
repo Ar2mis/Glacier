@@ -18,6 +18,7 @@ build/
 coverage/
 *.xcuserstate
 xcuserdata/
+Glacier.xcodeproj/project.xcworkspace/xcuserdata/
 
 # Credentials, signing material, and local configuration
 .env

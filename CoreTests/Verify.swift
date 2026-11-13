@@ -1,0 +1,51 @@
+import Foundation
+import GlacierCore
+
+@main enum CoreVerify {
+    static func main() async throws {
+        let glossary = CourseVocabulary.normalize("\nBIOG 1440\n  osmosis = 渗透  \nBIOG 1440\nOSMOSIS = 渗透\nProf. Levine\n")
+        precondition(glossary == "BIOG 1440\nosmosis = 渗透\nProf. Levine")
+        precondition(CourseVocabulary.normalize(String(repeating: "词", count: 4001)).isEmpty)
+        let pairs = (0..<8).map { BilingualCaption(english: "E\($0)", chinese: "中\($0)") }
+        let body = try TranscriptRefiner.requestBody(text: "um cells like these use os Moses", glossary: glossary, context: pairs, model: "gpt-4o-mini")
+        precondition(body["store"] as? Bool == false)
+        let input = try JSONSerialization.jsonObject(with: Data((body["input"] as! String).utf8)) as! [String: Any]
+        precondition((input["previous_captions"] as! [[String: String]]).count == 4)
+        precondition(input["transcript"] as? String == "um cells like these use os Moses", "Keep raw source intact; let the prompt distinguish meaningful like")
+        precondition((body["instructions"] as! String).contains("negations"))
+        let mini = try TranscriptRefiner.requestBody(text: "x", glossary: "", context: [], model: "gpt-5-mini")
+        precondition((mini["reasoning"] as? [String: String])?["effort"] == "minimal")
+        func response(_ english: String, _ chinese: String, status: String = "completed") throws -> Data {
+            let caption = try JSONEncoder().encode(BilingualCaption(english: english, chinese: chinese))
+            return try JSONSerialization.data(withJSONObject: ["status": status, "output": [["type": "message", "content": [["type": "output_text", "text": String(data: caption, encoding: .utf8)!]]]]])
+        }
+        let caption = try TranscriptRefiner.parse(response("Cells like these use osmosis.", "这些细胞利用渗透作用。"), status: 200)
+        precondition(caption.english.contains("like") && caption.chinese.contains("渗透"))
+        let filler = try TranscriptRefiner.parse(response("", ""), status: 200)
+        precondition(filler.english.isEmpty && filler.chinese.isEmpty)
+        for invalid in [try response("x", ""), try response("x", "中", status: "incomplete"), Data("{}".utf8)] {
+            do { _ = try TranscriptRefiner.parse(invalid, status: 200); preconditionFailure("Invalid response accepted") } catch {}
+        }
+        do { _ = try TranscriptRefiner.parse(Data("secret provider message".utf8), status: 401); preconditionFailure("HTTP error accepted") }
+        catch { precondition(!error.localizedDescription.contains("secret provider")) }
+        var silence = UtteranceBuffer()
+        for _ in 0..<72000 { precondition(silence.append(Array(repeating: 0, count: 1600)) == nil) }
+        precondition(silence.samples.count <= 3200, "Two hours of silence must not accumulate PCM")
+        var speech = UtteranceBuffer(maxSeconds: 3)
+        var closed = [[Float]]()
+        for _ in 0..<90 { if let chunk = speech.append(Array(repeating: 0.2, count: 1600)) { closed.append(chunk) } }
+        precondition(closed.count == 3 && closed.allSatisfy { $0.count == 48000 })
+        _ = speech.append(Array(repeating: 0.2, count: 1600))
+        for _ in 0..<6 { precondition(speech.append(Array(repeating: 0, count: 1600)) == nil) }
+        precondition(speech.append(Array(repeating: 0, count: 1600)) != nil, "Silence finalizes speech")
+        let wav = AudioEncoding.wav([0, 1, -1, .nan])
+        precondition(wav.count == 52 && String(data: wav.prefix(4), encoding: .utf8) == "RIFF")
+        precondition(Array(wav.suffix(8)) == [0, 0, 255, 127, 1, 128, 0, 0])
+        let interim = try CloudASRParser.deepgram(Data(#"{"type":"Results","is_final":false,"channel":{"alternatives":[{"transcript":"Cells"}]}}"#.utf8), id: 8)
+        let final = try CloudASRParser.deepgram(Data(#"{"type":"Results","is_final":true,"channel":{"alternatives":[{"transcript":"Cells divide."}]}}"#.utf8), id: 8)
+        precondition(interim?.id == final?.id && interim?.isFinal == false && final?.isFinal == true)
+        precondition(WhisperModel.base.rawValue == "openai_whisper-base")
+        print("PASS: glossary, bounded context, bilingual schema/errors, non-destructive prompt, bounded PCM, silence boundaries, WAV and cloud partial/final parsing")
+        print("No microphone, model downloads, or live API calls were used.")
+    }
+}

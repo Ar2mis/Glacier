@@ -7,6 +7,7 @@ struct CaptionHistoryEntry: Identifiable, Sendable {
     var english: String
     var chinese: String = ""
     var translatedSource: String = ""
+    var cleanedEnglish: String = ""
 }
 
 struct CaptionJob: Equatable, Sendable {
@@ -40,6 +41,7 @@ struct LiveCaptionBuffer {
                     guard entries[existing].english != text else { continue }
                     entries[existing].english = text; entries[existing].lastSeen = now
                     entries[existing].chinese = ""; entries[existing].translatedSource = ""
+                    entries[existing].cleanedEnglish = ""
                 } else { entries.append(.init(id: id, firstSeen: now, lastSeen: now, english: text)) }
                 jobs.removeAll { $0.id == id }
                 jobs.append(.init(id: id, english: text))
@@ -84,7 +86,7 @@ struct LiveCaptionBuffer {
         jobs.append(job); queuedAt[job.id] = now
     }
     func mayDisplay(_ job: CaptionJob, now: Date = Date()) -> Bool {
-        guard let entry = entries.first(where: { $0.id == job.id }) else { return false }
+        guard let entry = entries.first(where: { $0.id == job.id && $0.english == job.english }) else { return false }
         return now.timeIntervalSince(entry.lastSeen) <= 8
     }
     @discardableResult
@@ -96,6 +98,12 @@ struct LiveCaptionBuffer {
     }
     func recent(at date: Date = Date()) -> [CaptionHistoryEntry] {
         entries.filter { $0.lastSeen >= date.addingTimeInterval(-30) && $0.firstSeen <= date }
+    }
+    mutating func refined(_ job: CaptionJob, english: String, chinese: String) {
+        guard let index = entries.firstIndex(where: { $0.id == job.id && $0.english == job.english }) else { return }
+        entries[index].cleanedEnglish = english
+        entries[index].chinese = chinese
+        entries[index].translatedSource = job.english
     }
     func context(before id: String) -> [TranslationPair] {
         guard let index = entries.firstIndex(where: { $0.id == id }) else { return [] }
