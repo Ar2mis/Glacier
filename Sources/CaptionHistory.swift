@@ -32,11 +32,8 @@ struct LiveCaptionBuffer {
             let validIDs = Set(pieces.indices.map { "\(segment.id):\($0)" })
             // A punctuation correction can merge sentences. Remove the obsolete
             // suffix as well, otherwise its old translation remains in history.
-            let dropIDs = entries.filter { $0.id.hasPrefix("\(segment.id):") && !validIDs.contains($0.id) }.map { $0.id }
-            entries.removeAll { dropIDs.contains($0.id) }
-            jobs.removeAll { dropIDs.contains($0.id) }
-            // Prune debounce timestamps for merged/deleted jobs.
-            for id in dropIDs { queuedAt.removeValue(forKey: id) }
+            entries.removeAll { $0.id.hasPrefix("\(segment.id):") && !validIDs.contains($0.id) }
+            jobs.removeAll { $0.id.hasPrefix("\(segment.id):") && !validIDs.contains($0.id) }
             for (index, text) in pieces.enumerated() {
                 let id = "\(segment.id):\(index)"
                 if let existing = entries.firstIndex(where: { $0.id == id }) {
@@ -51,14 +48,13 @@ struct LiveCaptionBuffer {
         }
         // History contains every observed sentence in the lookback window, plus
         // a margin for translating late results. Old sentences are never written here.
-        let expiry: (CaptionHistoryEntry) -> Bool = { now.timeIntervalSince($0.lastSeen) > 300 }
-        let expiredIDs = entries.filter(expiry).map { $0.id }
-        entries.removeAll(where: expiry)
+        entries.removeAll { now.timeIntervalSince($0.lastSeen) > 300 }
         let ids = Set(entries.map(\.id))
         jobs.removeAll { !ids.contains($0.id) }
-        // Prune debounce timestamps for expired jobs/entries.
-        for id in expiredIDs { queuedAt.removeValue(forKey: id) }
-        for id in queuedAt.keys where !ids.contains(id) { queuedAt.removeValue(forKey: id) }
+        // Merges and expiry can remove jobs without nextJob being called.
+        // Preserve the original debounce start for every still-pending revision.
+        let pendingIDs = Set(jobs.map(\.id))
+        queuedAt = queuedAt.filter { pendingIDs.contains($0.key) }
         if let first = segments.first?.id { seen = seen.filter { $0.key >= first - 2 } }
         return entries.last
     }
@@ -71,7 +67,7 @@ struct LiveCaptionBuffer {
         }
         // Clean up debounce timestamps left for jobs that have left the job list.
         let jobIDs = Set(jobs.map { $0.id })
-        for id in queuedAt.keys where !jobIDs.contains(id) { queuedAt.removeValue(forKey: id) }
+        queuedAt = queuedAt.filter { jobIDs.contains($0.key) }
         let ready = jobs.filter { job in
             guard let entry = entries.first(where: { $0.id == job.id }) else { return false }
             return now.timeIntervalSince(entry.lastSeen) >= 0.35 || now.timeIntervalSince(queuedAt[job.id] ?? now) >= 1.2
