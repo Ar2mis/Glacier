@@ -76,13 +76,44 @@ struct SentenceFeed {
         text.range(of: "[.!?。！？][\\\"'’”)]*$", options: .regularExpression) != nil
     }
 
+    // Helper: Split a string into pieces no longer than maxLen, at whitespace.
+    static func boundSplits(_ text: String, maxLen: Int) -> [String] {
+        guard text.count > maxLen else { return [text] }
+        var result = [String]()
+        var start = text.startIndex
+        let maxLen = max(20, maxLen)
+        while start < text.endIndex {
+            var end = start
+            var i = 0
+            var lastWhite: String.Index? = nil
+            while end < text.endIndex && i < maxLen {
+                if text[end].isWhitespace { lastWhite = end }
+                i += 1
+                end = text.index(after: end)
+            }
+            var split = end
+            if end != text.endIndex, let ws = lastWhite, ws > start {
+                split = text.index(after: ws)
+            }
+            result.append(String(text[start..<split]))
+            start = split
+        }
+        return result
+    }
+
     static func sentences(_ text: String) -> [String] {
         let tokenizer = NLTokenizer(unit: .sentence)
         tokenizer.setLanguage(.english); tokenizer.string = text
         var result = [String]()
         tokenizer.enumerateTokens(in: text.startIndex..<text.endIndex) { range, _ in
             let sentence = text[range].trimmingCharacters(in: .whitespacesAndNewlines)
-            if !sentence.isEmpty { result.append(sentence) }
+            if !sentence.isEmpty {
+                if sentence.count > 240 {
+                    result.append(contentsOf: boundSplits(sentence, maxLen: 240))
+                } else {
+                    result.append(sentence)
+                }
+            }
             return true
         }
         return result

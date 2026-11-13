@@ -61,7 +61,31 @@ struct PipelineVerify {
         precondition(midSentence.ingest([.init(id: 1, text: "The program")], now: start).isEmpty)
         precondition(midSentence.ingest([.init(id: 1, text: "The program works.")], now: start.addingTimeInterval(1)).isEmpty)
         precondition(midSentence.ingest([.init(id: 1, text: "The program works.")], now: start.addingTimeInterval(2)) == ["The program works."])
-        print("PASS: completed history skipped; stable sentences delivered once; appends, revisions, partial attachment and segment boundaries handled")
+
+        // Test SentenceFeed.boundSplits directly.
+        let longNoWS = String(repeating: "A", count: 500)
+        let segs = SentenceFeed.boundSplits(longNoWS, maxLen: 200)
+        precondition(segs.count == 3 && segs.joined() == longNoWS && segs.allSatisfy { $0.count <= 200 })
+
+        let longWithSpaces = String((0..<10).map { _ in "长句だらけの テストです " }.joined())
+        let splitSpaces = SentenceFeed.boundSplits(longWithSpaces, maxLen: 30)
+        precondition(splitSpaces.allSatisfy { $0.count <= 30 })
+        precondition(splitSpaces.joined() == longWithSpaces)
+        // Should split at whitespace but never drop or change chars even with Unicode
+        let longUnicode = "苹果🍏 和 香蕉🍌 之间并没有🍅这些符号的意义 "
+        let repeated = String(repeating: longUnicode, count: 15)
+        let unicodeSplit = SentenceFeed.boundSplits(repeated, maxLen: 80)
+        precondition(unicodeSplit.joined() == repeated)
+        precondition(unicodeSplit.allSatisfy { $0.count <= 80 })
+
+        // Test sentences covers absurd length, Unicode, and whitespace grouping
+        let crazy = String(repeating: "单词 word ", count: 100) + "noPunctuationSegmentJustUnicodeAndWhitespace " + String(repeating: "測試", count: 80)
+        let many = SentenceFeed.sentences(crazy)
+        precondition(many.joined() == crazy.trimmingCharacters(in: .whitespacesAndNewlines))
+        precondition(many.allSatisfy { $0.count <= 240 })
+        // Should split long unpunctuated segment at whitespace, not drop source
+
+        print("PASS: completed history skipped; stable sentences delivered once; appends, revisions, partial attachment and segment boundaries handled; bounded and Unicode/whitespace splits tested")
 
         let pairs = (0..<8).map { TranslationPair(english: "Sentence \($0)", chinese: "句子 \($0)") }
         let body = GPTTranslator.requestBody(sentence: "Current sentence.", context: pairs, glossary: "policy = 政策", model: "gpt-4.1")
