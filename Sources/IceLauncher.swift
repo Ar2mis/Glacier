@@ -143,7 +143,7 @@ final class IceButtonView: NSView {
         let recording = model.wisprRecording || (model.inputMode != "wispr" && model.running)
         let record = NSMenuItem(title: recording ? "停止录音" : "开始录音", action: #selector(toggleRecording), keyEquivalent: "")
         record.target = self
-        record.isEnabled = !model.quickBusy && !model.busy && !model.finishingRecording
+        record.isEnabled = !model.quickBusy && (!model.busy || model.canCancelCapture) && !model.finishingRecording
         record.toolTip = model.status
         menu.addItem(record)
         let history = NSMenuItem(title: "查看30秒文本", action: #selector(showHistory), keyEquivalent: "")

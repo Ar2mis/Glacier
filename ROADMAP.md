@@ -8,6 +8,18 @@ mean the native Swift build or Swift tests passed; consult CHANGELOG.md for the
 actual verification level. The entry advances only when the PR merges.
 If a task needs broader changes, revise its scope manually instead of bypassing it.
 
+## Shared speech architecture (manual integration, outside the daily bot scope)
+
+- [x] CORE-01: Add pinned WhisperKit 1.1.1 to the shared GlacierCore Swift package, with Base and Large v3 Turbo model selection.
+- [x] CORE-02: Add bounded microphone capture and selectable WhisperKit, Apple SFSpeechRecognizer, OpenAI chunked ASR and Deepgram streaming adapters; retain Mac Wispr/SpeechAnalyzer paths.
+- [x] CORE-03: Add TranscriptRefiner for one OpenAI request returning cleaned English and Chinese, with editable course vocabulary, bounded context and retained raw ASR.
+- [x] CORE-04: Wire shared providers into the Mac settings and add an iOS foreground captioning target and simulator build check.
+- [ ] CORE-05: Measure real microphone latency, academic word error rate, cleanup meaning preservation and iPhone memory/thermal behavior for Base versus Turbo.
+- [ ] CORE-06: Persist full independent-ASR lecture transcripts, flush unfinished audio on Stop, and connect them to the Word archive without Wispr.
+- [ ] CORE-07: Add model download progress/retry/offline management, interruption/route-change recovery and on-device UI tests.
+
+## Daily bounded improvements
+
 - [x] DI-01: Prune obsolete caption debounce timestamps when sentences merge or history expires.
   - Files: Sources/CaptionHistory.swift, Tests/CaptionQueueTests.swift
   - Acceptance: Remove stale queuedAt entries during update; preserve debounce for pending revisions; add deterministic merge/expiry regression tests.
@@ -58,4 +70,4 @@ If a task needs broader changes, revise its scope manually instead of bypassing 
 
 - Evaluate end-to-end microphone-to-caption latency and domain terminology accuracy with consented lecture samples.
 - PDF export, editable course glossary presets, stable Developer ID signing/notarization.
-- An independent speech backend and an iOS design; neither is currently shipped.
+- Broader iOS feature parity, signed distribution and real-device validation; no App Store release is shipped.

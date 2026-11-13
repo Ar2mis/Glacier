@@ -5,9 +5,10 @@ APP="$PWD/dist/Glacier.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" .build
 swift scripts/make-icon.swift .build/Glacier.iconset
 iconutil -c icns .build/Glacier.iconset -o "$APP/Contents/Resources/Glacier.icns"
-swiftc -swift-version 5 -O -target arm64-apple-macos26.0 \
-  Sources/*.swift -o "$APP/Contents/MacOS/LectureCaptions" \
-  -framework AppKit -framework SwiftUI -framework Speech -framework AVFoundation -framework Translation
+swift build -c release
+BIN_PATH=$(swift build -c release --show-bin-path)
+cp "$BIN_PATH/Glacier" "$APP/Contents/MacOS/LectureCaptions"
+cp THIRD_PARTY_NOTICES.txt "$APP/Contents/Resources/THIRD_PARTY_NOTICES.txt"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -22,7 +23,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundleShortVersionString</key><string>0.4.0</string>
 <key>LSMinimumSystemVersion</key><string>26.0</string>
 <key>LSUIElement</key><true/>
-<key>NSMicrophoneUsageDescription</key><string>将老师的讲话实时转为屏幕底部的中英文字幕。音频仅在本机处理，不保存录音。</string>
+<key>NSMicrophoneUsageDescription</key><string>将讲话实时转为字幕。WhisperKit/Apple 在本机处理；选择 OpenAI/Deepgram 时会发送音频到该服务。</string>
 <key>NSSpeechRecognitionUsageDescription</key><string>将英语讲话转为实时字幕。</string>
 </dict></plist>
 PLIST

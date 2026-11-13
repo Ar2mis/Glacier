@@ -25,6 +25,7 @@ struct TranslationPair { let english: String; let chinese: String }
         precondition(buffer.entries.count == 2)
         buffer.translated(inFlight, text: "细胞", complete: true)
         precondition(buffer.entries[0].chinese.isEmpty, "Old translation must not attach to revised source")
+        precondition(buffer.mayDisplay(inFlight, now: t.addingTimeInterval(1)), "A recent earlier bilingual pair may display together during continuous ASR revision")
         buffer.translated(second, text: "这个过程称为渗透。", complete: true)
         precondition(buffer.entries[1].chinese == "这个过程称为渗透。")
         buffer.retry(second, now: t.addingTimeInterval(2))
@@ -89,18 +90,17 @@ struct TranslationPair { let english: String; let chinese: String }
         let jobA = ctx.nextJob(now: t.addingTimeInterval(1))!
         ctx.translated(jobA, text: "第一句。", complete: false) // Partial/unfinished
         _ = ctx.update([.init(id: 30, text: "First sentence. Second done.")], now: t.addingTimeInterval(2))
-        let jobB = ctx.nextJob(now: t.addingTimeInterval(2))!
-        var contextB = ctx.context(before: jobB.id)
+        let jobB = ctx.nextJob(now: t.addingTimeInterval(2.4))!
+        let contextB = ctx.context(before: jobB.id)
         precondition(contextB.isEmpty, "Unfinished translation should not appear in context")
         ctx.translated(jobA, text: "第一句。", complete: true)
-        var contextCAfterAComplete = ctx.context(before: jobB.id)
+        let contextCAfterAComplete = ctx.context(before: jobB.id)
         precondition(contextCAfterAComplete.count == 1, "Completed translation should appear in context")
         precondition(contextCAfterAComplete[0].english == "First sentence.", "Context uses original sentence before revision if not revised")
         precondition(contextCAfterAComplete[0].chinese == "第一句。")
         ctx.translated(jobB, text: "第二句。", complete: true)
-        let jobC = CaptionJob(id: "30:2", english: "Third sentence.")
-        ctx.entries.append(.init(id: jobC.id, firstSeen: t.addingTimeInterval(3), lastSeen: t.addingTimeInterval(3), english: jobC.english))
-        ctx.jobs.append(jobC)
+        _ = ctx.update([.init(id: 30, text: "First sentence. Second done. Third sentence.")], now: t.addingTimeInterval(3))
+        let jobC = ctx.nextJob(now: t.addingTimeInterval(3.4))!
         ctx.translated(jobC, text: "第三句。", complete: false)
         let contextC = ctx.context(before: jobC.id)
         precondition(contextC.count == 2 && contextC[0].english == "First sentence." && contextC[1].english == "Second done.", "Only completed, in-order context included")
@@ -111,19 +111,30 @@ struct TranslationPair { let english: String; let chinese: String }
         precondition(contextC2[1].chinese == "第二句，修正。", "Revision to completed translation appears in context")
         // Now make a fourth and fifth, confirm rolling window
         _ = ctx.update([.init(id: 31, text: "Four.")], now: t.addingTimeInterval(4))
-        let jobD = ctx.nextJob(now: t.addingTimeInterval(4))!
+        let jobD = ctx.nextJob(now: t.addingTimeInterval(4.4))!
         ctx.translated(jobD, text: "四。", complete: true)
         _ = ctx.update([.init(id: 32, text: "Five.")], now: t.addingTimeInterval(5))
-        let jobE = ctx.nextJob(now: t.addingTimeInterval(5))!
+        let jobE = ctx.nextJob(now: t.addingTimeInterval(5.4))!
         ctx.translated(jobE, text: "五。", complete: true)
         // Add sixth, then context should only show 4 most recent completed
         _ = ctx.update([.init(id: 33, text: "Six.")], now: t.addingTimeInterval(6))
-        let jobF = ctx.nextJob(now: t.addingTimeInterval(6))!
+        let jobF = ctx.nextJob(now: t.addingTimeInterval(6.4))!
         ctx.translated(jobF, text: "六。", complete: true)
         let ctxF = ctx.context(before: jobF.id)
         precondition(ctxF.count == 4, "Context limited to four most recent completed entries")
         precondition(ctxF.last?.english == "Five.", "Latest included in context")
-        precondition(ctxF[0].english == "Second done.", "Rolling context window oldest is the fourth back")
+        precondition(ctxF[0].english == "First sentence.", "Exactly four completed predecessors are retained")
+        _ = ctx.update([.init(id: 34, text: "Seven.")], now: t.addingTimeInterval(7))
+        let jobG = ctx.nextJob(now: t.addingTimeInterval(7.4))!
+        let ctxG = ctx.context(before: jobG.id)
+        precondition(ctxG.count == 4 && ctxG[0].english == "Second done.", "A fifth completed predecessor evicts the oldest pair")
+        precondition(ctxG.last?.english == "Six.")
+        ctx.refined(jobG, english: "Clean seventh sentence.", chinese: "第七句。")
+        precondition(ctx.entries.last?.english == "Seven.", "Cleanup must preserve the original ASR evidence")
+        precondition(ctx.entries.last?.cleanedEnglish == "Clean seventh sentence.")
+        _ = ctx.update([.init(id: 34, text: "Seven revised.")], now: t.addingTimeInterval(7.5))
+        ctx.refined(jobG, english: "Stale", chinese: "旧译文")
+        precondition(ctx.entries.last?.cleanedEnglish == "", "Late cleanup must not attach to revised ASR")
         print("PASS: queue debounce, order, overload, revisions, retry, punctuation merger, 30-second history, debounce pruning, and context exclusion of unfinished translations")
     }
 }

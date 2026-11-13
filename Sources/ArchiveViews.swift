@@ -38,7 +38,10 @@ struct HistoryView: View {
                     ForEach(entries) { entry in
                         VStack(alignment: .leading, spacing: 5) {
                             Text(entry.firstSeen, style: .time).font(.caption).foregroundStyle(.secondary)
-                            Text(entry.english).font(.custom("TimesNewRomanPSMT", size: 18))
+                            Text(entry.cleanedEnglish.isEmpty ? entry.english : entry.cleanedEnglish).font(.custom("TimesNewRomanPSMT", size: 18))
+                            if !entry.cleanedEnglish.isEmpty && entry.cleanedEnglish != entry.english {
+                                Text("ASR: \(entry.english)").font(.caption).foregroundStyle(.secondary)
+                            }
                             Text(entry.chinese.isEmpty ? "尚无译文" : entry.chinese).font(.custom("STSongti-SC-Regular", size: 18))
                                 .foregroundStyle(entry.chinese.isEmpty ? .secondary : .primary)
                         }.textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
