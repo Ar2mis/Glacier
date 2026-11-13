@@ -161,9 +161,11 @@ Do not treat an accelerated two-hour synthetic soak as a two-hour real recording
 
 The backlog is in [ROADMAP.md](ROADMAP.md), with 15 ordered tasks, explicit scopes
 and acceptance criteria. [The workflow](.github/workflows/daily-improve.yml)
-starts daily at **10:17 UTC**, then waits a uniformly random **0–14,399 seconds**
-before proposing a change. The intended start window is 10:17–14:17 UTC
-(05:17–09:17 EST / 06:17–10:17 EDT); GitHub scheduling/queue delays and generation
+starts daily at **01:30 UTC** (`30 1 * * *`), then waits a uniformly random
+**0–14,399 seconds** before proposing a change. This is **8:30 PM EST** on the
+previous calendar day, with an intended start window of **8:30 PM–12:30 AM EST**.
+The fixed UTC cron does not adjust for daylight saving time: during EDT the
+window is **9:30 PM–1:30 AM**. GitHub scheduling/queue delays and generation
 can move the actual commit later. `workflow_dispatch` skips jitter. Sleeping
 consumes up to four hours of Ubuntu runner time; the propose job timeout is 260
 minutes. Checkout resolves the current default branch after the delay.

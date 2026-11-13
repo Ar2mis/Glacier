@@ -2,7 +2,9 @@ name: Daily improvement
 
 on:
   schedule:
-    - cron: '17 10 * * *' # 10:17 UTC: 05:17 EST / 06:17 EDT
+    # 30 1 * * * = 8:30 PM EST (previous day); 9:30 PM EDT during daylight saving.
+    # With 0–4 hours of jitter: 8:30 PM–12:30 AM EST / 9:30 PM–1:30 AM EDT.
+    - cron: '30 1 * * *'
   workflow_dispatch:
 
 permissions:
