@@ -7,7 +7,7 @@ Mark `[x]` only after the full native build/tests pass on a Mac and the change i
 reviewed; it does not mean the PR has merged. Merge the PR to advance the queue.
 If a task needs broader changes, revise its scope manually instead of bypassing it.
 
-- [ ] DI-01: Prune obsolete caption debounce timestamps when sentences merge or history expires.
+- [x] DI-01: Prune obsolete caption debounce timestamps when sentences merge or history expires.
   - Files: Sources/CaptionHistory.swift, Tests/CaptionQueueTests.swift
   - Acceptance: Remove stale queuedAt entries during update; preserve debounce for pending revisions; add deterministic merge/expiry regression tests.
 - [ ] DI-02: Exclude unfinished translations from subsequent sentences' translation context.

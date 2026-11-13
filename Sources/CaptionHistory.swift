@@ -51,6 +51,10 @@ struct LiveCaptionBuffer {
         entries.removeAll { now.timeIntervalSince($0.lastSeen) > 300 }
         let ids = Set(entries.map(\.id))
         jobs.removeAll { !ids.contains($0.id) }
+        // Merges and expiry can remove jobs without nextJob being called.
+        // Preserve the original debounce start for every still-pending revision.
+        let pendingIDs = Set(jobs.map(\.id))
+        queuedAt = queuedAt.filter { pendingIDs.contains($0.key) }
         if let first = segments.first?.id { seen = seen.filter { $0.key >= first - 2 } }
         return entries.last
     }
@@ -61,7 +65,9 @@ struct LiveCaptionBuffer {
             guard let entry = entries.first(where: { $0.id == job.id }) else { return true }
             return now.timeIntervalSince(entry.lastSeen) > 8
         }
-        queuedAt = queuedAt.filter { id, _ in jobs.contains { $0.id == id } }
+        // Clean up debounce timestamps left for jobs that have left the job list.
+        let jobIDs = Set(jobs.map { $0.id })
+        queuedAt = queuedAt.filter { jobIDs.contains($0.key) }
         let ready = jobs.filter { job in
             guard let entry = entries.first(where: { $0.id == job.id }) else { return false }
             return now.timeIntervalSince(entry.lastSeen) >= 0.35 || now.timeIntervalSince(queuedAt[job.id] ?? now) >= 1.2
