@@ -170,19 +170,24 @@ schedules can be delayed. Only the default branch may run the secret-bearing job
    output. One request per run, a 12,000-output-token cap, and no automatic API
    retry loop. The model defaults to `gpt-4.1`; change `OPENAI_MODEL` as needed for
    your API account. Generated source is not executed in this job.
-2. **Verify on a fresh Apple Silicon `macos-26` runner:** no OpenAI secret, no
-   persisted checkout credentials, read-only repository token. Require a passing
-   baseline, validate exact replacements, apply changes and rerun the full gate.
-   The bot may edit only the task's declared existing Swift files; it must extend
-   tests and cannot remove existing assertion lines or alter scripts/workflows.
-   Limit changes to 400 added/deleted lines. Failures restore tracked file content
-   and produce no verified patch; the task remains unchecked.
-3. **Publish on a fresh Linux runner:** consume the verified patch as data,
-   confirm the base commit has not moved, and open a **draft PR** on a unique
-   `codex/daily-improve-*` branch. No generated code runs with repository write
-   access. Only successful checks produce a roadmap checkmark and changelog entry.
-   Those changes remain in the PR until you merge it. Nothing auto-merges or
+2. **Portable verification on a fresh `ubuntu-latest` runner:** no OpenAI secret,
+   no persisted checkout credentials, and read-only repository access. Validate
+   exact replacements and run shell/Python syntax checks and automation unit tests
+   before and after applying the proposal. The bot may edit only the task's
+   declared Swift files and must extend tests without removing existing assertion
+   lines. Changes are limited to 400 added/deleted lines. Failures restore tracked
+   content and produce no candidate patch. **Swift is not compiled or tested on
+   Ubuntu; AppKit, Speech and Translation require macOS.**
+3. **Publish on a fresh Ubuntu runner:** confirm the base has not moved and open
+   a **draft PR explicitly labeled “native build NOT verified”** on a unique
+   `codex/daily-improve-*` branch. Generated code never runs with write access.
+   ROADMAP.md and CHANGELOG.md remain unchanged. Nothing auto-merges or
    force-pushes to `main`.
+4. **Native verification before merge:** check out the draft PR on a disposable
+   macOS 26+ Apple Silicon checkout and run `bash scripts/ci.sh`. After all checks
+   pass and the implementation is reviewed, mark the roadmap task complete and
+   append the changelog entry in that PR. The separate Build and verify workflow
+   also retains its macOS runner and supports manual dispatch on the PR branch.
 
 An existing open daily-improvement PR pauses further proposals until reviewed.
 An empty backlog exits without calling the API. A declined/failed proposal is
@@ -203,12 +208,12 @@ conservative checks, not a general-purpose sandbox.
    requests only the permissions each job needs; it never approves its own PR.
 4. Open **Actions → Daily improvement → Run workflow** on `main` and review the
    first result. Account/org policy may restrict runners, Actions minutes or PR
-   creation. macOS runners and API calls can incur charges; configure account
+   creation. Runners and API calls can incur charges; configure account
    budgets before unattended use.
 5. Review and merge draft PRs yourself. GitHub normally does not trigger another
    `pull_request` workflow for PRs created with `GITHUB_TOKEN`; the daily workflow
-   already tests the exact base plus patch. If the base or PR changes afterward,
-   rerun verification on the new state. CI also supports manual dispatch.
+   only runs portable checks. Run the native suite on the actual PR head before
+   merging, and repeat it if the base or PR changes afterward.
 
 Local inspection (clean, committed checkout required):
 
@@ -216,8 +221,10 @@ Local inspection (clean, committed checkout required):
 python3 scripts/daily_improve.py --inspect
 # With OPENAI_API_KEY already provided through your shell's secret management:
 python3 scripts/daily_improve.py --propose
-# Prefer CI for executing model-generated changes. On a disposable local clone:
-python3 scripts/daily_improve.py --apply-proposal .daily-improve/proposal.json
+# Ubuntu-compatible mode used by the daily workflow (completion stays pending):
+python3 scripts/daily_improve.py --apply-proposal .daily-improve/proposal.json --portable
+# On a disposable Mac checkout, omit --portable to require the full native suite:
+# python3 scripts/daily_improve.py --apply-proposal .daily-improve/proposal.json
 # With no mode flag the script proposes, applies and verifies in one invocation.
 ```
 

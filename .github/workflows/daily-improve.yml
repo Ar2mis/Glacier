@@ -67,9 +67,9 @@ jobs:
   verify:
     needs: propose
     if: needs.propose.outputs.ready == 'true'
-    # The app uses macOS 26 Speech/Translation APIs and an arm64 build target.
-    runs-on: macos-26
-    timeout-minutes: 50
+    # Portable checks only. Native Swift verification must happen on a Mac before merge.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -84,8 +84,8 @@ jobs:
         with:
           name: proposal
           path: .daily-improve
-      - name: Check baseline, apply proposal, build and test, then update roadmap
-        run: python3 scripts/daily_improve.py --apply-proposal .daily-improve/proposal.json
+      - name: Check portable baseline and proposal; leave task completion pending
+        run: python3 scripts/daily_improve.py --apply-proposal .daily-improve/proposal.json --portable
       - name: Preserve failed check diagnostics without publishing a patch
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -97,9 +97,9 @@ jobs:
           if-no-files-found: ignore
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: verified-improvement
+          name: unverified-improvement
           path: |
-            .daily-improve/verified.patch
+            .daily-improve/unverified.patch
             .daily-improve/report.md
             .daily-improve/base.txt
           include-hidden-files: true
@@ -120,16 +120,16 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: verified-improvement
+          name: unverified-improvement
           path: .daily-improve
-      - name: Apply verified data only; never execute generated code with write access
+      - name: Apply candidate data only; never execute generated code with write access
         env:
           EXPECTED_BASE: ${{ needs.propose.outputs.base }}
         run: |
           test "$(git rev-parse HEAD)" = "$EXPECTED_BASE"
           test "$(cat .daily-improve/base.txt)" = "$EXPECTED_BASE"
-          git apply --check .daily-improve/verified.patch
-          git apply .daily-improve/verified.patch
+          git apply --check .daily-improve/unverified.patch
+          git apply .daily-improve/unverified.patch
           python3 - <<'PY'
           import re, subprocess
           records = subprocess.check_output(['git', 'diff', '--raw', '--no-abbrev']).decode().splitlines()
@@ -138,7 +138,7 @@ jobs:
               metadata, path = record.split('\t')
               assert metadata.split()[0:2] == [':100644', '100644'], 'Only existing regular files allowed'
               assert metadata.split()[-1] == 'M', 'No added/deleted/renamed files allowed'
-              assert re.fullmatch(r'(Sources|Tests)/[A-Za-z0-9_]+\.swift|ROADMAP\.md|CHANGELOG\.md', path), 'Unexpected path'
+              assert re.fullmatch(r'(Sources|Tests)/[A-Za-z0-9_]+\.swift', path), 'Unexpected path'
           PY
           git diff --check
       - name: Open a draft PR; never merge or update main
@@ -147,12 +147,10 @@ jobs:
           token: ${{ github.token }}
           base: ${{ github.event.repository.default_branch }}
           branch: codex/daily-improve-${{ github.run_id }}-${{ github.run_attempt }}
-          commit-message: 'chore: propose verified daily roadmap improvement'
-          title: 'Glacier: verified daily roadmap improvement #${{ github.run_number }}'
+          commit-message: 'chore: propose daily improvement pending native verification'
+          title: 'Glacier: native build NOT verified — daily improvement #${{ github.run_number }}'
           body-path: .daily-improve/report.md
           draft: true
           add-paths: |
             Sources/*.swift
             Tests/*.swift
-            ROADMAP.md
-            CHANGELOG.md

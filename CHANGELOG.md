@@ -3,9 +3,10 @@
 ## Unreleased
 
 ### Repository and automation
+- Moved daily proposal verification to Ubuntu-only portable checks. Draft PRs explicitly require native Mac verification; roadmap completion and changelog updates remain manual until then.
 - Documented the native macOS architecture, setup, privacy boundaries and known limitations.
 - Added a scoped 15-task roadmap and a guarded OpenAI-powered daily improvement pipeline.
-- Added CI and offline automation tests. Daily changes require passing checks and human PR review.
+- Added CI and offline automation tests. Daily proposals require portable checks; completion requires native checks and human PR review.
 - Updated the synthetic audio-conversion fixture to signed 16-bit PCM, verified the output format, and skipped optional speech-asset discovery in headless CI.
 
 ## 0.4.0 — existing local prototype

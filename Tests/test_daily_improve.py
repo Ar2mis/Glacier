@@ -124,6 +124,42 @@ class ImprovementTests(unittest.TestCase):
         self.assertTrue((self.root / '.daily-improve/verified.patch').is_file())
         self.assertEqual(self.git('rev-parse', 'HEAD'), self.proposal['base'])
 
+    def test_portable_keeps_completion_pending_and_labels_report(self):
+        before = {name: (self.root / name).read_bytes() for name in ('ROADMAP.md', 'CHANGELOG.md')}
+        di.apply_proposal(self.root, self.proposal, runner=lambda root: None, portable=True)
+        self.assertEqual(before, {name: (self.root / name).read_bytes() for name in before})
+        out = self.root / '.daily-improve'
+        self.assertTrue((out / 'unverified.patch').is_file())
+        self.assertFalse((out / 'verified.patch').exists())
+        self.assertIn('Native build not verified', (out / 'report.md').read_text())
+        self.assertIn('Swift regression tests were NOT run', (out / 'report.md').read_text())
+        for name in before:
+            self.assertNotIn('diff --git a/' + name, (out / 'unverified.patch').read_text())
+
+    def test_portable_runner_never_invokes_native_suite(self):
+        with patch.object(di.subprocess, 'run') as run:
+            run.return_value.returncode = 0
+            run.return_value.stdout = b'portable checks passed'
+            di.run_checks(self.root, portable=True)
+            self.assertEqual(run.call_count, 1)
+            self.assertEqual(run.call_args.args[0], ('bash', 'scripts/ci-portable.sh'))
+
+    def test_portable_failure_removes_stale_artifacts_and_restores_source(self):
+        out = self.root / '.daily-improve'
+        out.mkdir()
+        for name in ('verified.patch', 'unverified.patch', 'report.md', 'base.txt'):
+            (out / name).write_text('stale')
+        calls = []
+        def runner(root):
+            calls.append(1)
+            if len(calls) == 2:
+                raise di.ImprovementError('portable failure')
+        with self.assertRaises(di.ImprovementError):
+            di.apply_proposal(self.root, self.proposal, runner=runner, portable=True)
+        self.assertFalse(list(out.iterdir()))
+        self.assertEqual((self.root / 'Sources/Example.swift').read_text(), 'let value = 1\n')
+        self.assertIn('[ ] DI-01', (self.root / 'ROADMAP.md').read_text())
+
     def test_failed_baseline_or_changed_checks_roll_back(self):
         originals = {p: (self.root / p).read_bytes() for p in di.tracked(self.root)}
         for fail_on in (1, 2):
