@@ -6,6 +6,12 @@ public struct BilingualCaption: Codable, Equatable, Sendable {
     public init(english: String, chinese: String) { self.english = english; self.chinese = chinese }
 }
 
+public struct RefinementServiceFailure: LocalizedError, Sendable {
+    public let status: Int
+    public let retryable: Bool
+    public var errorDescription: String? { "OpenAI cleanup failed (HTTP \(status)); check key, model access or quota. Raw English is retained." }
+}
+
 public enum CourseVocabulary {
     public static func normalize(_ text: String) -> String {
         var seen = Set<String>(), result = [String](), length = 0
@@ -52,7 +58,13 @@ public struct TranscriptRefiner: Sendable {
         return body
     }
     public static func parse(_ data: Data, status: Int) throws -> BilingualCaption {
-        guard (200..<300).contains(status) else { throw GlacierCoreError.message("OpenAI cleanup failed (HTTP \(status)); raw English is retained.") }
+        guard (200..<300).contains(status) else {
+            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            let error = object?["error"] as? [String: Any]
+            let code = error?["code"] as? String ?? error?["type"] as? String ?? ""
+            let quota = ["insufficient_quota", "billing_hard_limit_reached"].contains(code)
+            throw RefinementServiceFailure(status: status, retryable: !quota && (status == 429 || status == 408 || status >= 500))
+        }
         guard data.count <= 65536,
               let root = try JSONSerialization.jsonObject(with: data) as? [String: Any], root["status"] as? String == "completed",
               let output = root["output"] as? [[String: Any]] else { throw GlacierCoreError.message("Incomplete cleanup response; raw English is retained.") }

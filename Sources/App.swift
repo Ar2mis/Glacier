@@ -509,7 +509,10 @@ final class CaptionModel: ObservableObject {
                     else { status = simulation ? "模拟课堂 · 中英文实时更新 · 未使用麦克风" : "实时字幕 · 中英文同步更新" }
                 } catch {
                     guard !Task.isCancelled, generation == token, translationEpoch == epoch, running else { return }
-                    let failure = TranslationFailure.classify(error)
+                    let failure: TranslationFailure
+                    if let service = error as? RefinementServiceFailure {
+                        failure = .init(kind: service.retryable ? .network : .access, message: service.localizedDescription, retryAfter: 2)
+                    } else { failure = TranslationFailure.classify(error) }
                     failures += 1
                     if !useLocal && session != nil && (!failure.retryable || failures >= 2) {
                         useLocal = true; fallbackReason = failure.message

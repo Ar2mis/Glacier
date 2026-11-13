@@ -86,7 +86,10 @@ struct LiveCaptionBuffer {
         jobs.append(job); queuedAt[job.id] = now
     }
     func mayDisplay(_ job: CaptionJob, now: Date = Date()) -> Bool {
-        guard let entry = entries.first(where: { $0.id == job.id && $0.english == job.english }) else { return false }
+        // A recent older pair may be shown together while ASR revises its source;
+        // requiring exact equality here starves Chinese during continuous speech.
+        // translated/refined still require exact source equality before storing history.
+        guard let entry = entries.first(where: { $0.id == job.id }) else { return false }
         return now.timeIntervalSince(entry.lastSeen) <= 8
     }
     @discardableResult

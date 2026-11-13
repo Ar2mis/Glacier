@@ -25,6 +25,7 @@ struct TranslationPair { let english: String; let chinese: String }
         precondition(buffer.entries.count == 2)
         buffer.translated(inFlight, text: "细胞", complete: true)
         precondition(buffer.entries[0].chinese.isEmpty, "Old translation must not attach to revised source")
+        precondition(buffer.mayDisplay(inFlight, now: t.addingTimeInterval(1)), "A recent earlier bilingual pair may display together during continuous ASR revision")
         buffer.translated(second, text: "这个过程称为渗透。", complete: true)
         precondition(buffer.entries[1].chinese == "这个过程称为渗透。")
         buffer.retry(second, now: t.addingTimeInterval(2))

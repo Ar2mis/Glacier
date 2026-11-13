@@ -86,6 +86,10 @@ import GlacierCore
                     guard generation == token, !Task.isCancelled else { return }
                     caption = .init(english: text, chinese: "Cleanup unavailable; original English retained.")
                     status = "Cleanup failed. Check the OpenAI key/quota/network."
+                    if let service = error as? RefinementServiceFailure, !service.retryable {
+                        self.refiner = nil; queue = []
+                        status = "Cleanup paused after a key/access/quota error. English continues; fix the key and restart."
+                    }
                 }
             }
         }

@@ -189,6 +189,8 @@ files are generated as OOXML and zipped with the system `zip` tool.
 bash scripts/ci.sh                 # complete build + syntax + offline test gate
 bash scripts/verify-all.sh         # seven legacy Mac verification suites
 swift run -c release GlacierCoreVerify # shared pipeline's deterministic offline tests
+# Optional real model smoke test: downloads/caches Base; use a synthetic/consented file.
+swift run -c release GlacierCoreVerify --whisper-audio /absolute/path/to/audio.wav
 bash scripts/verify-ios.sh         # iOS app + shared core compilation (full Xcode)
 python3 -m unittest discover -s Tests -p 'test_*.py' -v
 ```

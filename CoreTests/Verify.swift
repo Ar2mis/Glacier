@@ -54,6 +54,10 @@ final class RefinerMock: URLProtocol, @unchecked Sendable {
         }
         do { _ = try TranscriptRefiner.parse(Data("secret provider message".utf8), status: 401); preconditionFailure("HTTP error accepted") }
         catch { precondition(!error.localizedDescription.contains("secret provider")) }
+        for (code, data, retryable) in [(401, Data(), false), (429, Data(#"{"error":{"code":"insufficient_quota"}}"#.utf8), false), (429, Data(), true)] {
+            do { _ = try TranscriptRefiner.parse(data, status: code); preconditionFailure("HTTP failure accepted") }
+            catch let failure as RefinementServiceFailure { precondition(failure.retryable == retryable) }
+        }
         var silence = UtteranceBuffer()
         for _ in 0..<72000 { precondition(silence.append(Array(repeating: 0, count: 1600)) == nil) }
         precondition(silence.samples.count <= 3200, "Two hours of silence must not accumulate PCM")

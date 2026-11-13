@@ -8,7 +8,9 @@
 - Added a foreground iOS SwiftUI app and unsigned simulator build check; retained the macOS overlay, Wispr path and existing translation/archive providers.
 - Fixed DI-02's generated native test: it mutated private setters, dequeued before debounce, and asserted an incorrect rolling-context boundary. Tests now exercise public buffer behavior and reject stale cleanup results.
 - Updated the daily cron to 01:30 UTC (8:30 PM EST / 9:30 PM EDT) with its existing 0–4 hour scheduled jitter. The immediate run skipped jitter but rejected its DI-03 patch before publishing; no change was merged from that failed run.
-- Native verification results are recorded after the integration checks finish. No claim of live lecture accuracy, iPhone performance or an App Store/notarized release.
+- Verification: native macOS build, shared-core checks (including a mocked single-request bilingual response), all seven legacy Mac suites, 21 automation tests, and GitHub-hosted iOS Simulator compilation. A local WhisperKit Base smoke test correctly transcribed synthetic speech about a cell membrane and osmosis; it used no microphone or cloud ASR.
+- Preserved recent bilingual-pair display during continuous ASR revisions while retaining exact-source guards for stored history; the session regression suite caught and verified this distinction.
+- No claim of live lecture accuracy, iPhone performance, live provider access, or an App Store/notarized release. Full independent-ASR archiving and final-utterance flushing remain on the roadmap.
 
 ### Caption queue — DI-01 (2026-11-13)
 - Prune obsolete debounce timestamps during sentence merges and history expiry, while preserving the initial timer for pending transcript revisions.
