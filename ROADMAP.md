@@ -2,9 +2,10 @@
 
 Ordered, small reviewable changes. The bot selects the first unchecked task only.
 Each task declares the exact existing files it may edit; tests must be extended in
-an existing executable test suite. Ubuntu-only daily checks leave tasks unchecked.
-Mark `[x]` only after the full native build/tests pass on a Mac and the change is
-reviewed; it does not mean the PR has merged. Merge the PR to advance the queue.
+an existing executable test suite. The daily bot marks `[x]` after passing Ubuntu
+portable checks under the owner's automatic merge policy. A checkmark does NOT
+mean the native Swift build or Swift tests passed; consult CHANGELOG.md for the
+actual verification level. The entry advances only when the PR merges.
 If a task needs broader changes, revise its scope manually instead of bypassing it.
 
 - [x] DI-01: Prune obsolete caption debounce timestamps when sentences merge or history expires.

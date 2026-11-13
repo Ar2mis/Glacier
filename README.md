@@ -159,42 +159,50 @@ Do not treat an accelerated two-hour synthetic soak as a two-hour real recording
 
 ## Daily improvement pipeline
 
-The backlog is in [ROADMAP.md](ROADMAP.md), with 15 ordered tasks, explicit file
-scopes and acceptance criteria. The workflow in
-[`.github/workflows/daily-improve.yml`](.github/workflows/daily-improve.yml) runs at
-**10:17 UTC daily** (05:17 EST / 06:17 EDT) and supports **Run workflow**. GitHub
-schedules can be delayed. Only the default branch may run the secret-bearing job.
+The backlog is in [ROADMAP.md](ROADMAP.md), with 15 ordered tasks, explicit scopes
+and acceptance criteria. [The workflow](.github/workflows/daily-improve.yml)
+starts daily at **10:17 UTC**, then waits a uniformly random **0–14,399 seconds**
+before proposing a change. The intended start window is 10:17–14:17 UTC
+(05:17–09:17 EST / 06:17–10:17 EDT); GitHub scheduling/queue delays and generation
+can move the actual commit later. `workflow_dispatch` skips jitter. Sleeping
+consumes up to four hours of Ubuntu runner time; the propose job timeout is 260
+minutes. Checkout resolves the current default branch after the delay.
 
-1. **Propose on Linux:** read the first unchecked task and tracked Swift source;
-   send bounded source context to OpenAI's Responses API using structured JSON
-   output. One request per run, a 12,000-output-token cap, and no automatic API
-   retry loop. The model defaults to `gpt-4.1`; change `OPENAI_MODEL` as needed for
-   your API account. Generated source is not executed in this job.
-2. **Portable verification on a fresh `ubuntu-latest` runner:** no OpenAI secret,
-   no persisted checkout credentials, and read-only repository access. Validate
-   exact replacements and run shell/Python syntax checks and automation unit tests
-   before and after applying the proposal. The bot may edit only the task's
-   declared Swift files and must extend tests without removing existing assertion
-   lines. Changes are limited to 400 added/deleted lines. Failures restore tracked
-   content and produce no candidate patch. **Swift is not compiled or tested on
-   Ubuntu; AppKit, Speech and Translation require macOS.**
-3. **Publish on a fresh Ubuntu runner:** confirm the base has not moved and open
-   a **draft PR explicitly labeled “native build NOT verified”** on a unique
-   `codex/daily-improve-*` branch. Generated code never runs with write access.
-   ROADMAP.md and CHANGELOG.md remain unchanged. Nothing auto-merges or
-   force-pushes to `main`.
-4. **Native verification before merge:** check out the draft PR on a disposable
-   macOS 26+ Apple Silicon checkout and run `bash scripts/ci.sh`. After all checks
-   pass and the implementation is reviewed, mark the roadmap task complete and
-   append the changelog entry in that PR. The separate Build and verify workflow
-   also retains its macOS runner and supports manual dispatch on the PR branch.
+All daily jobs use `ubuntu-latest`. Only the default branch can access the API
+secret. Jobs separate API access, draft publication, portable verification and
+merge permissions:
 
-An existing open daily-improvement PR pauses further proposals until reviewed.
-An empty backlog exits without calling the API. A declined/failed proposal is
-retried on the next scheduled run; revise or reorder the task if it repeatedly
-fails. Passing tests do not prove semantic correctness or code safety: inspect
-both implementation and tests before merging. The file/assertion gates are
-conservative checks, not a general-purpose sandbox.
+1. **Propose:** select the first unchecked task and send bounded tracked source
+   context to OpenAI's Responses API. One call, up to 12,000 output tokens, no
+   retry loop. `OPENAI_MODEL` defaults to `gpt-4.1`. No generated code executes.
+2. **Open a draft:** validate exact replacements, declared file scopes, assertion
+   preservation and the 400-line budget; publish the candidate before running
+   checks. No roadmap completion is recorded yet. Invalid/refused proposals stop
+   before a PR exists. A valid proposal that fails checks remains an open draft.
+3. **Verify without secrets/write credentials:** run `scripts/ci-portable.sh` on
+   both baseline and candidate, and reject unexpected repository changes. Only
+   after success, mark the selected task `[x]` and append a changelog entry that
+   explicitly records **portable checks only; native Swift build/tests not run**.
+4. **Publish and merge:** update the same draft with checked completion metadata,
+   ensure main and the draft have not changed, mark ready, and use
+   `gh pr merge --squash --match-head-commit` for a direct conditional squash
+   merge. There is no direct push/force-push to main by the daily bot and no
+   `--admin` bypass. If publishing/merging fails, restore the open PR to draft.
+
+**Automatic merging is gated by portable checks, not native application tests.**
+These checks cover shell/Python syntax, automation unit tests, scoped edits and
+patch consistency; they cannot establish Swift compilation, runtime correctness,
+translation quality or live Wispr behavior. Generated Swift tests are added but
+not executed on Ubuntu. This is the owner's explicitly selected unattended policy,
+not a guarantee of a working native build. Native checks remain available through
+`bash scripts/ci.sh` on an Apple Silicon Mac or the separate macOS CI workflow.
+
+An open daily-improvement PR pauses new proposals, preventing duplicates after a
+failure or blocked merge. Resolve/close that draft to resume. An empty backlog
+exits without an API call. The job never automatically weakens repository branch
+rules: a rule that requires additional checks/reviews can prevent merging and
+will leave the PR for attention. Changes to the base/head during a run also stop
+merging. A fresh run must verify against the new base.
 
 ### One-time GitHub setup
 
@@ -210,10 +218,12 @@ conservative checks, not a general-purpose sandbox.
    first result. Account/org policy may restrict runners, Actions minutes or PR
    creation. Runners and API calls can incur charges; configure account
    budgets before unattended use.
-5. Review and merge draft PRs yourself. GitHub normally does not trigger another
-   `pull_request` workflow for PRs created with `GITHUB_TOKEN`; the daily workflow
-   only runs portable checks. Run the native suite on the actual PR head before
-   merging, and repeat it if the base or PR changes afterward.
+5. Ensure squash merging is enabled. The workflow uses a direct squash merge
+   after its own successful checks, so the repository's optional **Allow auto-merge**
+   setting is not required. Job-level `contents: write` and `pull-requests: write`
+   permit publication and merging; verification has read-only access. Rulesets
+   and organization restrictions still apply. Bot-token merges normally do not
+   trigger another push/PR workflow; do not assume macOS CI runs after each merge.
 
 Local inspection (clean, committed checkout required):
 
@@ -221,8 +231,9 @@ Local inspection (clean, committed checkout required):
 python3 scripts/daily_improve.py --inspect
 # With OPENAI_API_KEY already provided through your shell's secret management:
 python3 scripts/daily_improve.py --propose
-# Ubuntu-compatible mode used by the daily workflow (completion stays pending):
+# Optional local portable review mode (completion stays pending):
 python3 scripts/daily_improve.py --apply-proposal .daily-improve/proposal.json --portable
+# The daily workflow adds --complete-portable to permit automatic completion.
 # On a disposable Mac checkout, omit --portable to require the full native suite:
 # python3 scripts/daily_improve.py --apply-proposal .daily-improve/proposal.json
 # With no mode flag the script proposes, applies and verifies in one invocation.

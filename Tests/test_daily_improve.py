@@ -160,6 +160,44 @@ class ImprovementTests(unittest.TestCase):
         self.assertEqual((self.root / 'Sources/Example.swift').read_text(), 'let value = 1\n')
         self.assertIn('[ ] DI-01', (self.root / 'ROADMAP.md').read_text())
 
+    def test_prepare_draft_never_runs_checks_or_records_completion(self):
+        originals = {name: (self.root / name).read_bytes() for name in ('ROADMAP.md', 'CHANGELOG.md')}
+        with patch.object(di, 'run_checks', side_effect=AssertionError('must not execute checks')):
+            di.prepare_draft(self.root, self.proposal)
+        self.assertEqual((self.root / 'Sources/Example.swift').read_text(), 'let value = 2\n')
+        self.assertEqual(originals, {name: (self.root / name).read_bytes() for name in originals})
+        self.assertIn('verification pending', (self.root / '.daily-improve/report.md').read_text())
+        self.assertFalse((self.root / '.daily-improve/verified.patch').exists())
+
+    def test_automatic_portable_completion_records_actual_evidence(self):
+        observations = []
+        def runner(root):
+            observations.append(1)
+            self.assertIn('[ ] DI-01', (root / 'ROADMAP.md').read_text())
+        di.apply_proposal(self.root, self.proposal, runner=runner, portable=True, complete_portable=True)
+        self.assertEqual(len(observations), 2)
+        self.assertIn('[x] DI-01', (self.root / 'ROADMAP.md').read_text())
+        self.assertIn('[ ] DI-02', (self.root / 'ROADMAP.md').read_text())
+        self.assertIn('native Swift build/tests NOT run', (self.root / 'CHANGELOG.md').read_text())
+        out = self.root / '.daily-improve'
+        self.assertTrue((out / 'verified.patch').exists())
+        self.assertFalse((out / 'unverified.patch').exists())
+        self.assertIn('automatic squash merge', (out / 'report.md').read_text())
+        self.assertNotIn('all seven Swift verification suites', (out / 'report.md').read_text())
+
+    def test_automatic_completion_rolls_back_when_checks_fail(self):
+        calls = []
+        def runner(root):
+            calls.append(1)
+            if len(calls) == 2:
+                raise di.ImprovementError('checks failed')
+        with self.assertRaises(di.ImprovementError):
+            di.apply_proposal(self.root, self.proposal, runner=runner, portable=True, complete_portable=True)
+        self.assertIn('[ ] DI-01', (self.root / 'ROADMAP.md').read_text())
+        self.assertEqual((self.root / 'CHANGELOG.md').read_text(), '# Changelog\n')
+        self.assertEqual((self.root / 'Sources/Example.swift').read_text(), 'let value = 1\n')
+        self.assertFalse((self.root / '.daily-improve/verified.patch').exists())
+
     def test_failed_baseline_or_changed_checks_roll_back(self):
         originals = {p: (self.root / p).read_bytes() for p in di.tracked(self.root)}
         for fail_on in (1, 2):
