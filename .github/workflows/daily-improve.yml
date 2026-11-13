@@ -1,0 +1,158 @@
+name: Daily improvement
+
+on:
+  schedule:
+    - cron: '17 10 * * *' # 10:17 UTC: 05:17 EST / 06:17 EDT
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-improvement
+  cancel-in-progress: false
+
+jobs:
+  propose:
+    # Secrets are never exposed to pull_request code or a manually selected feature branch.
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      ready: ${{ steps.generate.outputs.ready }}
+      base: ${{ steps.base.outputs.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - id: base
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Wait for any existing improvement PR to be reviewed
+        id: pending
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          count=$(gh pr list --state open --limit 1000 --json headRefName --jq '[.[] | select(.headRefName | startswith("codex/daily-improve-"))] | length')
+          if [ "$count" -eq 0 ]; then
+            echo 'clear=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'An improvement PR is awaiting review; skipping another API call.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Propose one scoped change (never execute generated code here)
+        id: generate
+        if: steps.pending.outputs.clear == 'true'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4.1' }}
+        run: |
+          python3 scripts/daily_improve.py --propose
+          if [ -f .daily-improve/proposal.json ]; then
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: steps.generate.outputs.ready == 'true'
+        with:
+          name: proposal
+          path: .daily-improve/proposal.json
+          include-hidden-files: true
+          retention-days: 3
+          if-no-files-found: error
+
+  verify:
+    needs: propose
+    if: needs.propose.outputs.ready == 'true'
+    # The app uses macOS 26 Speech/Translation APIs and an arm64 build target.
+    runs-on: macos-26
+    timeout-minutes: 50
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.propose.outputs.base }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: proposal
+          path: .daily-improve
+      - name: Check baseline, apply proposal, build and test, then update roadmap
+        run: python3 scripts/daily_improve.py --apply-proposal .daily-improve/proposal.json
+      - name: Preserve failed check diagnostics without publishing a patch
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: failed-check-log
+          path: .daily-improve/checks.log
+          include-hidden-files: true
+          retention-days: 3
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: verified-improvement
+          path: |
+            .daily-improve/verified.patch
+            .daily-improve/report.md
+            .daily-improve/base.txt
+          include-hidden-files: true
+          retention-days: 3
+          if-no-files-found: error
+
+  pull-request:
+    needs: [propose, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: verified-improvement
+          path: .daily-improve
+      - name: Apply verified data only; never execute generated code with write access
+        env:
+          EXPECTED_BASE: ${{ needs.propose.outputs.base }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_BASE"
+          test "$(cat .daily-improve/base.txt)" = "$EXPECTED_BASE"
+          git apply --check .daily-improve/verified.patch
+          git apply .daily-improve/verified.patch
+          python3 - <<'PY'
+          import re, subprocess
+          records = subprocess.check_output(['git', 'diff', '--raw', '--no-abbrev']).decode().splitlines()
+          assert records, 'Empty patch'
+          for record in records:
+              metadata, path = record.split('\t')
+              assert metadata.split()[0:2] == [':100644', '100644'], 'Only existing regular files allowed'
+              assert metadata.split()[-1] == 'M', 'No added/deleted/renamed files allowed'
+              assert re.fullmatch(r'(Sources|Tests)/[A-Za-z0-9_]+\.swift|ROADMAP\.md|CHANGELOG\.md', path), 'Unexpected path'
+          PY
+          git diff --check
+      - name: Open a draft PR; never merge or update main
+        uses: peter-evans/create-pull-request@3ffccacd46053766916f087ce41d627c0b8cf2d1 # v8
+        with:
+          token: ${{ github.token }}
+          base: ${{ github.event.repository.default_branch }}
+          branch: codex/daily-improve-${{ github.run_id }}-${{ github.run_attempt }}
+          commit-message: 'chore: propose verified daily roadmap improvement'
+          title: 'Glacier: verified daily roadmap improvement #${{ github.run_number }}'
+          body-path: .daily-improve/report.md
+          draft: true
+          add-paths: |
+            Sources/*.swift
+            Tests/*.swift
+            ROADMAP.md
+            CHANGELOG.md

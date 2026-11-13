@@ -1,0 +1,46 @@
+dist/
+.build/
+.DS_Store
+
+# Dependencies and language/tool caches
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+.swiftpm/
+DerivedData/
+build/
+coverage/
+*.xcuserstate
+xcuserdata/
+
+# Credentials, signing material, and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.p8
+*.mobileprovision
+*.keychain*
+secrets/
+
+# Personal recordings, exported notes, debug reports and automation artifacts
+output/
+recordings/
+transcripts/
+*.m4a
+*.wav
+*.mp3
+*.docx
+*.pdf
+*.log
+.daily-improve/
+.idea/
+.vscode/
