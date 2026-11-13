@@ -1,8 +1,34 @@
 import Foundation
 import GlacierCore
+import WhisperKit
+
+final class RefinerMock: URLProtocol, @unchecked Sendable {
+    static var requests = 0
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        Self.requests += 1
+        precondition(request.url?.absoluteString == "https://api.openai.com/v1/responses")
+        precondition(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-not-a-key")
+        precondition(request.httpMethod == "POST")
+        let reply = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
+        let data = Data(#"{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"{\"english\":\"Cells use osmosis.\",\"chinese\":\"细胞利用渗透作用。\"}"}]}]}"#.utf8)
+        client?.urlProtocol(self, didReceive: reply, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data); client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
 
 @main enum CoreVerify {
     static func main() async throws {
+        if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--whisper-audio" {
+            let pipe = try await WhisperKit(WhisperKitConfig(model: WhisperModel.base.rawValue, verbose: false, prewarm: true, load: true))
+            let result = try await pipe.transcribe(audioPath: CommandLine.arguments[2], decodeOptions: DecodingOptions(language: "en", skipSpecialTokens: true))
+            let text = result.map(\.text).joined(separator: " ")
+            precondition(!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            print("WhisperKit Base smoke transcript: \(text)")
+            return
+        }
         let glossary = CourseVocabulary.normalize("\nBIOG 1440\n  osmosis = 渗透  \nBIOG 1440\nOSMOSIS = 渗透\nProf. Levine\n")
         precondition(glossary == "BIOG 1440\nosmosis = 渗透\nProf. Levine")
         precondition(CourseVocabulary.normalize(String(repeating: "词", count: 4001)).isEmpty)
@@ -45,6 +71,13 @@ import GlacierCore
         let final = try CloudASRParser.deepgram(Data(#"{"type":"Results","is_final":true,"channel":{"alternatives":[{"transcript":"Cells divide."}]}}"#.utf8), id: 8)
         precondition(interim?.id == final?.id && interim?.isFinal == false && final?.isFinal == true)
         precondition(WhisperModel.base.rawValue == "openai_whisper-base")
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [RefinerMock.self]
+        let session = URLSession(configuration: config)
+        let refined = try await TranscriptRefiner(key: "test-not-a-key", session: session).refine("um cells use os Moses", glossary: "osmosis = 渗透")
+        precondition(RefinerMock.requests == 1, "Both languages must come from a single HTTP request")
+        precondition(refined == BilingualCaption(english: "Cells use osmosis.", chinese: "细胞利用渗透作用。"))
+        session.invalidateAndCancel()
         print("PASS: glossary, bounded context, bilingual schema/errors, non-destructive prompt, bounded PCM, silence boundaries, WAV and cloud partial/final parsing")
         print("No microphone, model downloads, or live API calls were used.")
     }

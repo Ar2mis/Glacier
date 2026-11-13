@@ -110,6 +110,7 @@ final class CaptionModel: ObservableObject {
     @Published var connectionStatus = ""
     @Published var queuedSentences = 0
     var canStart: Bool { !busy && (translationMode == "gpt" ? hasAPIKey : translationReady) }
+    var canCancelCapture: Bool { busy && startTask != nil && SpeechProvider(rawValue: inputMode) != nil }
     var layoutChanged: (() -> Void)?
     private let capture = SpeechCapture()
     private var coreCapture: (any StreamingTranscriber)?
@@ -256,9 +257,9 @@ final class CaptionModel: ObservableObject {
     }
     func quickToggle(showSettingsOnFailure: Bool = true) {
         if simulation { stop(message: "模拟已停止 · 未使用麦克风"); return }
-        guard !quickBusy, !busy, !finishingRecording, !simulation else { return }
+        guard !quickBusy, (!busy || canCancelCapture), !finishingRecording, !simulation else { return }
         if inputMode != "wispr" {
-            if running { stop() } else { start() }
+            if running || canCancelCapture { stop() } else { start() }
             return
         }
         guard AXIsProcessTrusted() else {
@@ -557,6 +558,7 @@ final class CaptionModel: ObservableObject {
     }
     func stop(message: String = "已暂停") {
         guard !busy || startTask != nil else { return }
+        let wasRecording = running
         generation = UUID(); startTask?.cancel(); startTask = nil
         translationTask?.cancel(); translationTask = nil
         coreTask?.cancel(); coreTask = nil; coreCapture?.stop(); coreCapture = nil; refiner = nil
@@ -564,6 +566,7 @@ final class CaptionModel: ObservableObject {
         queuedSentences = 0
         running = false; busy = true; status = message
         hideCaptions()
+        if wasRecording && inputMode != "wispr" { recordingStopped?() }
         Task { if !simulation { await capture.stop() }; busy = false }
     }
     func demo() {
@@ -668,9 +671,9 @@ struct SettingsView: View {
                     Button(model.translationReady ? "本机翻译已就绪" : "准备本机翻译") { model.prepareTranslation() }
                         .disabled(model.running || model.busy || model.translationReady)
                 }
-                Button(model.inputMode == "wispr" ? (model.wisprRecording ? "停止录音" : "开始录音") : (model.running ? "暂停字幕" : "开始本机收音")) {
+                Button(model.canCancelCapture ? "取消准备" : model.inputMode == "wispr" ? (model.wisprRecording ? "停止录音" : "开始录音") : (model.running ? "停止录音" : "开始收音")) {
                     model.quickToggle()
-                }.buttonStyle(GlacierButtonStyle()).disabled(model.busy || model.quickBusy || model.finishingRecording)
+                }.buttonStyle(GlacierButtonStyle()).disabled((model.busy && !model.canCancelCapture) || model.quickBusy || model.finishingRecording)
                 Button("预览字幕") { model.demo() }.disabled(model.running || model.busy)
                 Button("回看最近 30 秒") { model.openHistory?() }
             }

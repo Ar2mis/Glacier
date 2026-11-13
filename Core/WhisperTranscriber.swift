@@ -22,12 +22,15 @@ private actor WhisperDecoder {
     private let microphone = Microphone()
     private var task: Task<Void, Never>?
     private var output: AsyncThrowingStream<TranscriptEvent, Error>.Continuation?
+    private var generation = UUID()
     public init(model: WhisperModel = .base) { self.model = model }
     public func start(status: @escaping @MainActor (String) -> Void) async throws -> AsyncThrowingStream<TranscriptEvent, Error> {
         stop()
+        let token = generation
         status("Preparing \(model.title). First use downloads the model; later runs use its cache.")
         try await decoder.prepare(model: model)
         try Task.checkCancellation()
+        guard generation == token else { throw CancellationError() }
         let audio = try await microphone.start()
         let (stream, continuation) = AsyncThrowingStream<TranscriptEvent, Error>.makeStream(bufferingPolicy: .bufferingOldest(64))
         output = continuation
@@ -52,10 +55,10 @@ private actor WhisperDecoder {
                 continuation.finish()
             } catch is CancellationError { continuation.finish() }
             catch { continuation.finish(throwing: GlacierCoreError.message("Whisper transcription stopped. Check the model download/network or try Base.")) }
-            self?.microphone.stop()
+            if self?.generation == token { self?.microphone.stop() }
         }
         status("WhisperKit ready · audio stays on this device")
         return stream
     }
-    public func stop() { task?.cancel(); task = nil; microphone.stop(); output?.finish(); output = nil }
+    public func stop() { generation = UUID(); task?.cancel(); task = nil; microphone.stop(); output?.finish(); output = nil }
 }

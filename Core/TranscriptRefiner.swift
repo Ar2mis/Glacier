@@ -77,13 +77,25 @@ public struct TranscriptRefiner: Sendable {
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: Self.requestBody(text: text, glossary: glossary, context: context, model: model))
-        let (bytes, response) = try await session.bytes(for: request)
-        var data = Data()
-        for try await byte in bytes {
-            try Task.checkCancellation()
-            guard data.count < 65536 else { throw GlacierCoreError.message("Cleanup response exceeded the size limit.") }
-            data.append(byte)
+        let configuredRequest = request
+        return try await withThrowingTaskGroup(of: BilingualCaption.self) { group in
+            group.addTask { [session] in
+                let (bytes, response) = try await session.bytes(for: configuredRequest)
+                var data = Data()
+                for try await byte in bytes {
+                    try Task.checkCancellation()
+                    guard data.count < 65536 else { throw GlacierCoreError.message("Cleanup response exceeded the size limit.") }
+                    data.append(byte)
+                }
+                return try Self.parse(data, status: (response as? HTTPURLResponse)?.statusCode ?? 0)
+            }
+            group.addTask {
+                try await Task.sleep(for: .seconds(8))
+                throw GlacierCoreError.message("Cleanup timed out; raw English is retained.")
+            }
+            defer { group.cancelAll() }
+            guard let result = try await group.next() else { throw CancellationError() }
+            return result
         }
-        return try Self.parse(data, status: (response as? HTTPURLResponse)?.statusCode ?? 0)
     }
 }

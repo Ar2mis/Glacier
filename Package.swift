@@ -15,7 +15,7 @@ let package = Package(
     targets: [
         .target(name: "GlacierCore", dependencies: [.product(name: "WhisperKit", package: "WhisperKit")], path: "Core"),
         .executableTarget(name: "GlacierApp", dependencies: ["GlacierCore"], path: "Sources"),
-        .executableTarget(name: "GlacierCoreVerify", dependencies: ["GlacierCore"], path: "CoreTests")
+        .executableTarget(name: "GlacierCoreVerify", dependencies: ["GlacierCore", .product(name: "WhisperKit", package: "WhisperKit")], path: "CoreTests")
     ],
     swiftLanguageVersions: [.v5]
 )
