@@ -55,6 +55,18 @@ class ImprovementTests(unittest.TestCase):
     def test_valid_exact_replacements(self):
         self.assertEqual(self.validate()['Sources/Example.swift'], 'let value = 2\n')
 
+    def test_duplicate_eof_newlines_do_not_block_draft_or_verification(self):
+        proposal = copy.deepcopy(self.proposal)
+        proposal['edits'][0]['new'] = 'let value = 2\n\n'
+        proposal['edits'][1]['new'] += '\n\n'
+        expected = self.validate(proposal)
+        self.assertEqual(expected['Sources/Example.swift'], 'let value = 2\n')
+        self.assertEqual(expected['Tests/Example.swift'], 'precondition(true)\nprecondition(value == 2)\n')
+        di.prepare_draft(self.root, proposal)
+        self.assertEqual((self.root / 'Sources/Example.swift').read_text(), expected['Sources/Example.swift'])
+        self.git('diff', '--check')
+        self.assertIn('- [ ] DI-01:', (self.root / 'ROADMAP.md').read_text())
+
     def test_stale_commit_and_task_rejected(self):
         for field, value in [('base', '0' * 40), ('task_id', 'DI-02')]:
             proposal = copy.deepcopy(self.proposal)

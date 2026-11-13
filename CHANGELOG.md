@@ -18,6 +18,7 @@
 - Verified on Apple Silicon macOS 27.2 with `CI=true bash scripts/ci.sh`: native app build, shell/Python syntax, 18 automation tests, and all seven Swift verification suites passed, including streaming/session faults, the accelerated two-hour soak, and Word export. Live microphone/Wispr/provider testing was not part of this verification.
 
 ### Repository and automation
+- Normalize duplicated blank lines at the end of generated Swift files before draft/verification, with a regression test. Two DI-03 attempts were correctly rejected by the whitespace gate; this formatting-only normalization preserves internal whitespace and all existing validation gates.
 - Added scheduled 0–4 hour jitter and automatic squash merging after Ubuntu portable checks. Candidate PRs are opened as drafts before verification; failures retain a draft. Automated completion records the portable-only verification level, not native build success.
 - Moved daily proposal verification to Ubuntu-only portable checks. Draft PRs explicitly require native Mac verification; roadmap completion and changelog updates remain manual until then.
 - Documented the native macOS architecture, setup, privacy boundaries and known limitations.

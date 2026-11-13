@@ -183,6 +183,10 @@ def validate(root, task, proposal):
             "Both implementation and regression tests must change.")
     total = 0
     for name, after in changed.items():
+        # Exact replacements can duplicate the file's final newline. Normalize
+        # only extra empty EOF lines, not indentation or whitespace inside code.
+        after = after.rstrip('\n') + '\n'
+        changed[name] = after
         before = (root / name).read_text()
         require(before != after, "Net no-op changes are forbidden.")
         diff = list(difflib.unified_diff(before.splitlines(), after.splitlines()))
