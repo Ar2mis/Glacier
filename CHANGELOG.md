@@ -39,3 +39,8 @@ This entry describes the imported prototype, not a published or notarized releas
 
 - Exclude unfinished translations from subsequent sentences' translation context.
 - Ubuntu portable checks passed; native Swift build/tests NOT run. Completed under the configured automatic portable-only policy.
+
+## 2026-11-13 — DI-03
+
+- Bound extremely long unpunctuated caption segments at whitespace without losing source characters.
+- Ubuntu portable checks passed; native Swift build/tests NOT run. Completed under the configured automatic portable-only policy.
