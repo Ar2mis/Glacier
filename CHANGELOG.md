@@ -23,3 +23,8 @@
 - Synthetic stream, queue, session, accelerated-soak and archive verification programs.
 
 This entry describes the imported prototype, not a published or notarized release.
+
+## 2026-11-13 — DI-02
+
+- Exclude unfinished translations from subsequent sentences' translation context.
+- Ubuntu portable checks passed; native Swift build/tests NOT run. Completed under the configured automatic portable-only policy.

@@ -11,7 +11,7 @@ If a task needs broader changes, revise its scope manually instead of bypassing 
 - [x] DI-01: Prune obsolete caption debounce timestamps when sentences merge or history expires.
   - Files: Sources/CaptionHistory.swift, Tests/CaptionQueueTests.swift
   - Acceptance: Remove stale queuedAt entries during update; preserve debounce for pending revisions; add deterministic merge/expiry regression tests.
-- [ ] DI-02: Exclude unfinished translations from subsequent sentences' translation context.
+- [x] DI-02: Exclude unfinished translations from subsequent sentences' translation context.
   - Files: Sources/CaptionHistory.swift, Tests/CaptionQueueTests.swift
   - Acceptance: Context includes only exact completed source/translation pairs, at most four; test partial, revised and completed cases.
 - [ ] DI-03: Bound extremely long unpunctuated caption segments at whitespace without losing source characters.
