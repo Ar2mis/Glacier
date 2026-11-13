@@ -18,6 +18,7 @@
 - Verified on Apple Silicon macOS 27.2 with `CI=true bash scripts/ci.sh`: native app build, shell/Python syntax, 18 automation tests, and all seven Swift verification suites passed, including streaming/session faults, the accelerated two-hour soak, and Word export. Live microphone/Wispr/provider testing was not part of this verification.
 
 ### Repository and automation
+- Hardened asynchronous session tests with bounded waits for completed state and unbuffered failure diagnostics after an intermittent hosted-runner assertion. All 15 session checks still pass, including an explicitly observed late callback after cancellation; application timing was not changed.
 - Normalize duplicated blank lines at the end of generated Swift files before draft/verification, with a regression test. Two DI-03 attempts were correctly rejected by the whitespace gate; this formatting-only normalization preserves internal whitespace and all existing validation gates.
 - Added scheduled 0–4 hour jitter and automatic squash merging after Ubuntu portable checks. Candidate PRs are opened as drafts before verification; failures retain a draft. Automated completion records the portable-only verification level, not native build success.
 - Moved daily proposal verification to Ubuntu-only portable checks. Draft PRs explicitly require native Mac verification; roadmap completion and changelog updates remain manual until then.
@@ -44,3 +45,4 @@ This entry describes the imported prototype, not a published or notarized releas
 
 - Bound extremely long unpunctuated caption segments at whitespace without losing source characters.
 - Ubuntu portable checks passed; native Swift build/tests NOT run. Completed under the configured automatic portable-only policy.
+- Subsequent local verification of merged PR #4: `CI=true bash scripts/ci.sh` passed the native Mac build, shared-core checks, all seven Swift suites and 22 automation tests. Unicode/whitespace reconstruction, session behavior, accelerated two-hour soak and Word export passed. The shared iOS target also compiled successfully in GitHub-hosted Simulator CI; lecture/device accuracy remains unmeasured.
