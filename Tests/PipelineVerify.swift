@@ -85,7 +85,62 @@ struct PipelineVerify {
         precondition(many.allSatisfy { $0.count <= 240 })
         // Should split long unpunctuated segment at whitespace, not drop source
 
-        print("PASS: completed history skipped; stable sentences delivered once; appends, revisions, partial attachment and segment boundaries handled; bounded and Unicode/whitespace splits tested")
+        // --- DI-04: Academic abbreviation and decimal regression cases ---
+        let abbr1 = "This is an example, e.g. it is clear. That follows."
+        let abbrSplit = SentenceFeed.sentences(abbr1)
+        precondition(abbrSplit.count == 2, "Should keep e.g. together: \(abbrSplit)")
+        precondition(abbrSplit[0].contains("e.g. it is clear."))
+        precondition(abbrSplit[1] == "That follows.")
+
+        let abbr2 = "He got his Ph.D. in 2010. Now he teaches."
+        let abbrSplit2 = SentenceFeed.sentences(abbr2)
+        precondition(abbrSplit2.count == 2)
+        precondition(abbrSplit2[0].contains("Ph.D. in 2010."))
+
+        let abbr3 = "Dr. Smith will present at 3 p.m. She will discuss the result."
+        let abbrSplit3 = SentenceFeed.sentences(abbr3)
+        precondition(abbrSplit3.count == 2)
+        precondition(abbrSplit3[0].contains("3 p.m."))
+        precondition(abbrSplit3[1].hasPrefix("She will"))
+
+        let abbr4 = "A chemical, i.e. NaCl, dissolves easily. Next topic."
+        let abbrSplit4 = SentenceFeed.sentences(abbr4)
+        precondition(abbrSplit4.count == 2)
+        precondition(abbrSplit4[0].contains("i.e. NaCl, dissolves easily."))
+
+        let dec1 = "The average was 3.14. The next value was higher."
+        let decSplit = SentenceFeed.sentences(dec1)
+        precondition(decSplit.count == 2)
+        precondition(decSplit[0].contains("3.14."))
+        precondition(decSplit[1].hasPrefix("The next"))
+
+        let dec2 = "The distance is 12.7 mm. Dr. A. B. Jones measured it."
+        let decSplit2 = SentenceFeed.sentences(dec2)
+        precondition(decSplit2.count == 2)
+        precondition(decSplit2[0].contains("12.7 mm."))
+        precondition(decSplit2[1].hasPrefix("Dr."))
+        // Ensure that splitting does not occur on decimal points
+
+        let dec3 = "This number is 1. He called it a test."
+        let decSplit3 = SentenceFeed.sentences(dec3)
+        precondition(decSplit3.count == 2)
+        precondition(decSplit3[0].contains("is 1."))
+        precondition(decSplit3[1].hasPrefix("He called"))
+
+        let abbr5 = "We reference Eq. 2 in the text. It follows."
+        let abbrSplit5 = SentenceFeed.sentences(abbr5)
+        precondition(abbrSplit5.count == 2)
+        precondition(abbrSplit5[0].contains("Eq. 2"))
+
+        // Real-world complex abbreviation and decimal mix
+        let complex = "Dr. Smith measured 1.23. Then, he compared it to 2.12 and 3.44. Next, see Fig. 2."
+        let complexSplit = SentenceFeed.sentences(complex)
+        precondition(complexSplit.count == 3)
+        precondition(complexSplit[0].contains("1.23."))
+        precondition(complexSplit[1].contains("2.12 and 3.44."))
+        precondition(complexSplit[2].contains("Fig. 2."))
+
+        print("PASS: completed history skipped; stable sentences delivered once; appends, revisions, partial attachment and segment boundaries handled; bounded and Unicode/whitespace splits tested. Academic abbreviation/decimal split regression passed.")
 
         let pairs = (0..<8).map { TranslationPair(english: "Sentence \($0)", chinese: "句子 \($0)") }
         let body = GPTTranslator.requestBody(sentence: "Current sentence.", context: pairs, glossary: "policy = 政策", model: "gpt-4.1")

@@ -30,7 +30,7 @@ If a task needs broader changes, revise its scope manually instead of bypassing 
 - [x] DI-03: Bound extremely long unpunctuated caption segments at whitespace without losing source characters.
   - Files: Sources/SentenceFeed.swift, Tests/PipelineVerify.swift
   - Acceptance: Add a bounded splitting helper used by sentences; cover Unicode, whitespace and long academic passages, preserving order.
-- [ ] DI-04: Improve sentence splitting around academic abbreviations and decimal numbers.
+- [x] DI-04: Improve sentence splitting around academic abbreviations and decimal numbers.
   - Files: Sources/SentenceFeed.swift, Tests/PipelineVerify.swift
   - Acceptance: Fixtures for e.g., i.e., Dr., decimal measurements and sentence-ending punctuation keep useful caption boundaries.
 - [ ] DI-05: Normalize duplicate and empty academic glossary lines before prompt construction.

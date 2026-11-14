@@ -56,3 +56,8 @@ This entry describes the imported prototype, not a published or notarized releas
 - Bound extremely long unpunctuated caption segments at whitespace without losing source characters.
 - Ubuntu portable checks passed; native Swift build/tests NOT run. Completed under the configured automatic portable-only policy.
 - Subsequent local verification of merged PR #4: `CI=true bash scripts/ci.sh` passed the native Mac build, shared-core checks, all seven Swift suites and 22 automation tests. Unicode/whitespace reconstruction, session behavior, accelerated two-hour soak and Word export passed. The shared iOS target also compiled successfully in GitHub-hosted Simulator CI; lecture/device accuracy remains unmeasured.
+
+## 2026-11-14 — DI-04
+
+- Improve sentence splitting around academic abbreviations and decimal numbers.
+- Ubuntu portable checks passed; native Swift build/tests NOT run. Completed under the configured automatic portable-only policy.
