@@ -2,6 +2,8 @@ import AVFoundation
 
 /// The tap serializes converter access. Only owned Float arrays cross the stream.
 private final class PCMConverter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var closed = false
     let converter: AVAudioConverter
     let target: AVAudioFormat
     let output: AsyncThrowingStream<[Float], Error>.Continuation
@@ -11,6 +13,8 @@ private final class PCMConverter: @unchecked Sendable {
         self.converter = converter; self.output = output
     }
     func accept(_ input: AVAudioPCMBuffer) {
+        lock.lock(); defer { lock.unlock() }
+        guard !closed else { return }
         let count = AVAudioFrameCount(ceil(Double(input.frameLength) * 16000 / input.format.sampleRate)) + 32
         guard let buffer = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: count) else { return }
         var supplied = false
@@ -26,11 +30,32 @@ private final class PCMConverter: @unchecked Sendable {
             output.finish(throwing: GlacierCoreError.message("Transcription cannot keep up. Try the Base model or close heavy apps."))
         }
     }
+    func finish() {
+        lock.lock(); defer { lock.unlock() }
+        guard !closed else { return }; closed = true
+        // Deliver the resampler's tail before closing the buffered audio stream.
+        for _ in 0..<64 {
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: 4096) else { break }
+            var error: NSError?
+            let state = converter.convert(to: buffer, error: &error) { _, status in
+                status.pointee = .endOfStream; return nil
+            }
+            if state == .error { output.finish(throwing: GlacierCoreError.message("Audio tail conversion failed.")); return }
+            if buffer.frameLength > 0, let channel = buffer.floatChannelData?[0] {
+                if case .dropped = output.yield(Array(UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength)))) {
+                    output.finish(throwing: GlacierCoreError.message("Audio backlog exceeded its limit while stopping.")); return
+                }
+            }
+            if state == .endOfStream || buffer.frameLength == 0 { output.finish(); return }
+        }
+        output.finish(throwing: GlacierCoreError.message("Audio converter did not finish its tail."))
+    }
 }
 
 @MainActor final class Microphone {
     private var engine: AVAudioEngine?
     private var output: AsyncThrowingStream<[Float], Error>.Continuation?
+    private var converter: PCMConverter?
     func start() async throws -> AsyncThrowingStream<[Float], Error> {
         guard await AVCaptureDevice.requestAccess(for: .audio) else { throw GlacierCoreError.message("Allow Glacier microphone access in Settings.") }
         try Task.checkCancellation()
@@ -45,12 +70,13 @@ private final class PCMConverter: @unchecked Sendable {
         let (stream, continuation) = AsyncThrowingStream<[Float], Error>.makeStream(bufferingPolicy: .bufferingOldest(96))
         let converter = try PCMConverter(source: source, output: continuation)
         engine.inputNode.installTap(onBus: 0, bufferSize: 4096, format: source) { buffer, _ in converter.accept(buffer) }
-        self.engine = engine; output = continuation
+        self.engine = engine; output = continuation; self.converter = converter
         do { engine.prepare(); try engine.start() } catch { stop(); throw GlacierCoreError.message("Unable to start microphone.") }
         return stream
     }
     func stop() {
         engine?.inputNode.removeTap(onBus: 0); engine?.stop(); engine = nil
+        converter?.finish(); converter = nil
         output?.finish(); output = nil
         #if os(iOS)
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)

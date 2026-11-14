@@ -15,8 +15,9 @@ If a task needs broader changes, revise its scope manually instead of bypassing 
 - [x] CORE-03: Add TranscriptRefiner for one OpenAI request returning cleaned English and Chinese, with editable course vocabulary, bounded context and retained raw ASR.
 - [x] CORE-04: Wire shared providers into the Mac settings and add an iOS foreground captioning target and simulator build check.
 - [ ] CORE-05: Measure real microphone latency, academic word error rate, cleanup meaning preservation and iPhone memory/thermal behavior for Base versus Turbo.
-- [ ] CORE-06: Persist full independent-ASR lecture transcripts, flush unfinished audio on Stop, and connect them to the Word archive without Wispr.
+- [x] CORE-06: Persist full independent-ASR lecture transcripts, drain WhisperKit audio on Stop, and export complete bilingual Word study notes without Wispr on Mac and iOS.
 - [ ] CORE-07: Add model download progress/retry/offline management, interruption/route-change recovery and on-device UI tests.
+- [ ] CORE-08: Add provider-specific graceful finalization for Apple/OpenAI/Deepgram; currently their saved transcripts explicitly warn about potentially unfinished audio.
 
 ## Daily bounded improvements
 

@@ -82,7 +82,62 @@ final class RefinerMock: URLProtocol, @unchecked Sendable {
         precondition(RefinerMock.requests == 1, "Both languages must come from a single HTTP request")
         precondition(refined == BilingualCaption(english: "Cells use osmosis.", chinese: "细胞利用渗透作用。"))
         session.invalidateAndCancel()
+        try await verifyLecturePersistenceAndFlush()
         print("PASS: glossary, bounded context, bilingual schema/errors, non-destructive prompt, bounded PCM, silence boundaries, WAV and cloud partial/final parsing")
         print("No microphone, model downloads, or live API calls were used.")
     }
+    static func verifyLecturePersistenceAndFlush() async throws {
+        var tail = UtteranceBuffer()
+        _ = tail.append([0.2, 0.3, 0.4])
+        precondition(tail.flush() == [0.2, 0.3, 0.4]); precondition(tail.flush() == nil)
+        _ = tail.append(Array(repeating: 0, count: 2000)); precondition(tail.flush() == nil)
+        let (audio, input) = AsyncThrowingStream<[Float], Error>.makeStream()
+        input.yield(Array(repeating: 0.2, count: 24000))
+        input.yield(Array(repeating: 0.3, count: 1600))
+        input.finish() // Equivalent to closing capture while frames remain queued.
+        var events: [TranscriptEvent] = []
+        try await WhisperStreamProcessor.run(audio: audio, decode: { samples in
+            try await Task.sleep(for: .milliseconds(20))
+            return "decoded \(samples.count)"
+        }, emit: { events.append($0) })
+        precondition(events == [.init(id: 0, text: "decoded 24000", isFinal: false), .init(id: 0, text: "decoded 25600", isFinal: true)], "Stop must drain queued audio and replace the partial with exactly one final")
+        let (silent, silenceInput) = AsyncThrowingStream<[Float], Error>.makeStream()
+        silenceInput.yield(Array(repeating: 0, count: 2000)); silenceInput.finish()
+        try await WhisperStreamProcessor.run(audio: silent, decode: { _ in preconditionFailure("Silence should not decode") }, emit: { _ in preconditionFailure("Silence should not emit") })
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("GlacierLectureTest-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = LectureSessionStore(directory: root)
+        let session = LectureSession(course: "BIOG 1440", source: "WhisperKit", glossary: "osmosis", archiveModel: "gpt-4o-mini")
+        try await store.create(session)
+        for id in 0..<1001 { try await store.append(.init(id: id, text: "Utterance \(id).", isFinal: true), to: session.id) }
+        try await store.append(.init(id: 1000, text: "stale partial", isFinal: false), to: session.id)
+        try await store.append(.init(id: 1001, text: "The final", isFinal: false), to: session.id)
+        let reopened = LectureSessionStore(directory: root)
+        let restored = try await reopened.english(session.id)
+        precondition(restored.hasPrefix("Utterance 0.\n\nUtterance 1."))
+        precondition(restored.hasSuffix("Utterance 1000.\n\nThe final"))
+        precondition(!restored.contains("stale partial"))
+        try await reopened.append(.init(id: 1001, text: "The final sentence.", isFinal: true), to: session.id)
+        let finished = try await reopened.finish(session.id)
+        precondition(finished.warning == nil && finished.ended != nil)
+        let all = try await reopened.utterances(session.id)
+        precondition(all.count == 1002 && all.allSatisfy(\.isFinal))
+        let full = try await reopened.english(session.id)
+        let savedText = try String(contentsOf: root.appendingPathComponent(session.id.uuidString + "/English.txt"), encoding: .utf8)
+        precondition(savedText == full)
+        do { try await reopened.append(.init(id: 1002, text: "late", isFinal: true), to: session.id); preconditionFailure("Closed session accepted text") } catch {}
+        let pending = try await reopened.pending(); precondition(pending.count == 1)
+        try await reopened.markExported(session.id, url: root.appendingPathComponent("lecture.docx"))
+        let completed = try await reopened.pending(); precondition(completed.isEmpty)
+        let interrupted = LectureSession(course: "", source: "WhisperKit", glossary: "", archiveModel: "gpt-4o-mini")
+        try await store.create(interrupted)
+        try await store.append(.init(id: 0, text: "unfinished speech", isFinal: false), to: interrupted.id)
+        let recovered = try await store.finish(interrupted.id)
+        precondition(recovered.warning != nil, "Provisional recovered text must not be labelled complete")
+        let zip = try StoredZip.archive([("word/document.xml", Data("English 中文 🧊".utf8)), ("empty", Data())])
+        try FileManager.default.createDirectory(atPath: ".build", withIntermediateDirectories: true)
+        try zip.write(to: URL(fileURLWithPath: ".build/core-stored.zip"))
+        print("PASS: graceful audio tail, single final revision, durable 1002-utterance lecture, restart recovery, private full-text storage and ZIP package")
+    }
+
 }

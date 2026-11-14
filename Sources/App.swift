@@ -115,6 +115,11 @@ final class CaptionModel: ObservableObject {
     private let capture = SpeechCapture()
     private var coreCapture: (any StreamingTranscriber)?
     private var coreTask: Task<Void, Never>?
+    private var coreFinishTask: Task<Void, Never>?
+    private var coreSessionID: UUID?
+    private var coreFailure: String?
+    @Published private(set) var drainingCore = false
+    private let coreFactory: ((SpeechProvider, WhisperModel, String) -> any StreamingTranscriber)?
     private var refiner: TranscriptRefiner?
     private let wisprCapture = WisprCapture()
     private var startTask: Task<Void, Never>?
@@ -133,10 +138,12 @@ final class CaptionModel: ObservableObject {
     private var translationProblem: String?
     let simulation: Bool
     private let translationOverride: CaptionTranslationOperation?
-    init(simulation: Bool = false, operation: CaptionTranslationOperation? = nil) {
+    init(simulation: Bool = false, archive: LectureArchive? = nil, coreFactory: ((SpeechProvider, WhisperModel, String) -> any StreamingTranscriber)? = nil, operation: CaptionTranslationOperation? = nil) {
         self.simulation = simulation
+        self.archive = archive ?? LectureArchive()
+        self.coreFactory = coreFactory
         self.translationOverride = operation
-        if !simulation { hasAPIKey = APIKeyStore.exists(provider: provider) }
+        if !simulation { hasAPIKey = APIKeyStore.exists(provider: provider); self.archive.recoverSavedLectures() }
     }
     @Published var historyEntries: [CaptionHistoryEntry] = []
     @Published var courseName = UserDefaults.standard.string(forKey: "courseName") ?? "" {
@@ -145,7 +152,7 @@ final class CaptionModel: ObservableObject {
     @Published var autoArchive = (UserDefaults.standard.object(forKey: "autoArchive") as? Bool) ?? true {
         didSet { UserDefaults.standard.set(autoArchive, forKey: "autoArchive") }
     }
-    let archive = LectureArchive()
+    let archive: LectureArchive
     var openHistory: (() -> Void)?
     var recordingStarted: (() -> Void)?
     var recordingStopped: (() -> Void)?
@@ -299,7 +306,7 @@ final class CaptionModel: ObservableObject {
         }
     }
     func start(allowEnglishOnly: Bool = false) {
-        guard !busy, !running, !simulation else { return }
+        guard !busy, !running, (!simulation || coreFactory != nil) else { return }
         if inputMode == "wispr" { watchWispr(); return }
         if translationMode == "apple" && !translationReady { prepareTranslation(); return }
         if let provider = SpeechProvider(rawValue: inputMode) { startCore(provider); return }
@@ -329,7 +336,7 @@ final class CaptionModel: ObservableObject {
         wisprCapture.stop(); wisprObserving = false
         busy = true; visible = true; layoutChanged?()
         generation = UUID(); let token = generation
-        resetCaptionSession()
+        resetCaptionSession(); coreFailure = nil
         startTask = Task {
             do {
                 let key: String
@@ -339,19 +346,27 @@ final class CaptionModel: ObservableObject {
                     key = try await Task.detached { try CredentialStore.read("deepgram") }.value
                 } else { key = "" }
                 try Task.checkCancellation()
-                let capture = TranscriberFactory.make(provider: provider, model: whisperModel, key: key)
+                let saved = LectureSession(course: courseName, source: provider.title, glossary: glossary,
+                                           archiveModel: gptModel, archiveProvider: self.provider.rawValue, autoArchive: autoArchive)
+                try await archive.lectures.create(saved)
+                coreSessionID = saved.id
+                try Task.checkCancellation()
+                let capture = coreFactory?(provider, whisperModel, key) ?? TranscriberFactory.make(provider: provider, model: whisperModel, key: key)
                 coreCapture = capture
                 let events = try await capture.start { [weak self] text in
                     guard self?.generation == token else { return }; self?.status = text
                 }
                 try Task.checkCancellation()
                 guard generation == token else { capture.stop(); return }
-                busy = false; running = true; recordingStarted?()
+                busy = false; startTask = nil; running = true; recordingStarted?()
                 beginTranslation(token: token)
                 coreTask = Task { [weak self] in
                     do {
                         for try await event in events {
                             guard let self, self.generation == token, !Task.isCancelled else { return }
+                            try await self.archive.lectures.append(event, to: saved.id)
+                            guard self.generation == token else { return }
+                            if self.drainingCore { continue }
                             if event.isFinal { self.displaySegments([.init(id: event.id, text: event.text)]) }
                             else {
                                 self.english = event.text; self.chinese = "识别中…"; self.layoutChanged?()
@@ -360,7 +375,8 @@ final class CaptionModel: ObservableObject {
                         if let self, self.generation == token, self.running { self.stop(message: "转录已结束") }
                     } catch {
                         guard let self, self.generation == token else { return }
-                        self.stop(message: error.localizedDescription)
+                        self.coreFailure = error.localizedDescription
+                        if !self.drainingCore { self.stop(message: error.localizedDescription) }
                     }
                 }
             } catch {
@@ -530,6 +546,10 @@ final class CaptionModel: ObservableObject {
         }
     }
     func archiveCurrent() {
+        if inputMode != "wispr" {
+            guard !running, !busy else { archive.status = "请先停止录音，等待最后一句完成。"; return }
+            archive.recoverSavedLectures(includeManual: true); return
+        }
         guard archiveCaptureTask == nil else { return }
         archiveCaptureTask = Task {
             defer { archiveCaptureTask = nil }
@@ -559,7 +579,34 @@ final class CaptionModel: ObservableObject {
         visible = false
         layoutChanged?()
     }
+    private func finishCoreRecording(_ capture: any StreamingTranscriber, id: UUID) {
+        guard coreFinishTask == nil else { return }
+        let consumer = coreTask
+        drainingCore = true; busy = true; running = false
+        hideCaptions(); recordingStopped?()
+        translationTask?.cancel(); translationTask = nil; translationEpoch = UUID()
+        status = "麦克风已停止 · 正在完成最后一句并保存全文…"
+        coreFinishTask = Task {
+            defer {
+                capture.stop(); coreCapture = nil; coreTask = nil; coreSessionID = nil
+                generation = UUID(); drainingCore = false; busy = false; coreFinishTask = nil
+            }
+            do { try await capture.finish() } catch { coreFailure = coreFailure ?? error.localizedDescription }
+            // The consumer persists each final result before the archive reads the lecture.
+            await consumer?.value
+            do {
+                let saved = try await archive.lectures.finish(id, warning: coreFailure)
+                if saved.autoArchive { try await archive.enqueueSavedLecture(saved) }
+                status = saved.warning == nil ? "录音已结束 · 全文已保存" : "录音已保存，但有未完成识别；请查看归档说明。"
+                if !saved.autoArchive { archive.status = "全文已保存在本机；可点击归档已保存的录音生成 Word。" }
+            } catch { status = "保存/归档未完成：\(error.localizedDescription)；已写入的转录仍保留，可恢复归档。" }
+        }
+    }
     func stop(message: String = "已暂停") {
+        if drainingCore { return }
+        if let capture = coreCapture, let id = coreSessionID, coreTask != nil {
+            finishCoreRecording(capture, id: id); return
+        }
         guard !busy || startTask != nil else { return }
         let wasRecording = running
         generation = UUID(); startTask?.cancel(); startTask = nil

@@ -1,9 +1,26 @@
 import Foundation
 import AppKit
+import GlacierCore
+
+actor ArchiveServiceFixture {
+    var requests: [Int] = []
+    var fail = true
+    let digest: Data
+    init(digest: Data) { self.digest = digest }
+    func unblock() { fail = false }
+    func count(_ id: Int) -> Int { requests.filter { $0 == id }.count }
+    func generate(_ input: String) throws -> Data {
+        let root = try JSONSerialization.jsonObject(with: Data(input.utf8)) as! [String: Any]
+        guard let parts = root["parts"] as? [[String: Any]] else { return digest }
+        let ids = parts.map { $0["id"] as! Int }; requests += ids
+        if fail && ids.contains(where: { $0 >= 3 }) { throw CaptionError.message("Simulated network loss") }
+        return try JSONEncoder().encode(TranslationBatch(translations: ids.map { .init(id: $0, chinese: "完整翻译第\($0)段。") }, notes: ["中文学习笔记。 "]))
+    }
+}
 
 @main
 struct ArchiveVerify {
-    @MainActor static func main() throws {
+    @MainActor static func main() async throws {
         var live = LiveCaptionBuffer()
         let now = Date(timeIntervalSince1970: 100)
         _ = live.update([.init(id: 1, text: "Old history."), .init(id: 2, text: "The lecture begins")], now: now)
@@ -49,8 +66,44 @@ struct ArchiveVerify {
                 .init(title: "研究假设", points: ["明确识别条件", "检查实施过程", "考虑潜在偏差"]),
                 .init(title: "政策解释", points: ["报告证据范围", "说明适用条件", "避免过度推广"]),
                 .init(title: "课后复习", points: ["回看完整英文原文", "核对完整中文译文", "整理关键知识点"])])
+        job.source = "WhisperKit · On device"
         let output = try WordExporter.export(job, desktop: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(".build/document-qa"))
         print("PASS: exact English reconstruction, numbered translation coverage, safe filenames and Word export")
         print(output.path)
+        try output.path.write(toFile: ".build/archive-output-path.txt", atomically: true, encoding: .utf8)
+        let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("GlacierArchiveRetry-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let store = LectureSessionStore(directory: temporary.appendingPathComponent("lectures"))
+        let retryEnglish = english + "\n\n" + english
+        precondition(ArchiveText.parts(retryEnglish).count > 3, "Fixture must span more than one network batch")
+        let saved = LectureSession(course: "Recovery test", source: "WhisperKit", glossary: "", archiveModel: "gpt-4o-mini")
+        try await store.create(saved)
+        try await store.append(.init(id: 0, text: retryEnglish, isFinal: true), to: saved.id)
+        let finished = try await store.finish(saved.id)
+        let service = ArchiveServiceFixture(digest: try JSONEncoder().encode(job.digest!))
+        let archive = LectureArchive(pendingDirectory: temporary.appendingPathComponent("pending"), outputDirectory: temporary.appendingPathComponent("exports"), lectures: store) { _, input in try await service.generate(input) }
+        try await archive.enqueueSavedLecture(finished)
+        func awaitIdle() async {
+            let deadline = ContinuousClock.now + .seconds(15)
+            while archive.working && ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(20)) }
+            precondition(!archive.working, "Archive test timed out")
+        }
+        await awaitIdle()
+        precondition(archive.lastURL == nil && archive.status.contains("未完成"))
+        let progressURL = temporary.appendingPathComponent("pending/\(saved.id.uuidString).json")
+        let checkpoint = try JSONDecoder().decode(ArchiveJob.self, from: Data(contentsOf: progressURL))
+        precondition(checkpoint.translations.count == 3 && checkpoint.english == retryEnglish)
+        await service.unblock()
+        // Duplicate handoff must not erase the successful batch before resuming.
+        try await archive.enqueueSavedLecture(finished)
+        await awaitIdle()
+        precondition(archive.lastURL != nil && !FileManager.default.fileExists(atPath: progressURL.path))
+        let firstBatchRequests = await service.count(0)
+        precondition(firstBatchRequests == 1, "Retry must not translate completed chunks again")
+        let final = try await store.session(saved.id)
+        precondition(final.exportedURL == archive.lastURL)
+        let original = try await store.english(saved.id)
+        precondition(original == retryEnglish, "Export must not delete the durable original")
+        print("PASS: interrupted full-lecture archive resumes saved translation checkpoints and exports once without losing English")
     }
 }

@@ -6,7 +6,7 @@ Glacier is an Apple Silicon desktop prototype for students who follow spoken
 English more easily with captions. A transparent, always-on-top overlay keeps
 English and Chinese visible while you read slides or use another application.
 The iOS preview displays captions inside the app. Both use the shared Swift
-package `GlacierCore`; the Mac overlay and Wispr Word archive remain Mac features.
+package `GlacierCore`; the system-wide overlay and Wispr integration remain Mac features.
 
 ## What works in the implementation
 
@@ -37,23 +37,34 @@ package `GlacierCore`; the Mac overlay and Wispr Word archive remain Mac feature
   a transparent click-through caption overlay, independent font/color/size/bold
   controls, adjustable shadows, and a draggable snapshot of the last 30 seconds.
   Defaults include Times New Roman and Songti SC.
-- **Study notes:** after a Wispr recording stops, optional automatic archiving
-  obtains its full transcript, translates numbered chunks, and exports a Word
-  document with Chinese summary, a rendered mind map, an English outline, then
-  the complete English transcript followed by the complete Chinese translation.
-  Course/topic folders are created on the Desktop; interrupted archive jobs can
-  be resumed.
-- **Alternative input:** Apple's on-device Speech pipeline can capture microphone
-  audio directly. This is separate from Wispr mode; automatic full-note capture
-  currently depends on Wispr.
+- **Complete lecture storage:** GlacierCore speech sessions persist every utterance
+  outside the short live-caption history. Partial revisions replace the same
+  utterance; finalized text is preserved. WhisperKit Stop closes microphone input,
+  drains queued PCM and resampler output, decodes residual speech, and waits for the
+  transcript writer before starting the archive. The overlay hides immediately;
+  a new recording waits until finalization completes.
+- **Study notes without Wispr:** after Stop, optional automatic archiving translates
+  the complete saved English in numbered chunks, generates a Chinese summary,
+  rendered mind map and English outline, and exports Word with the full English
+  followed by the full Chinese. Mac exports go to course/topic folders on the
+  Desktop; iOS exports go to Documents/Glacier with a Share button. Wispr's existing
+  full-transcript capture remains available on Mac.
+- **Recovery:** raw utterances and English.txt remain on device after export.
+  Archive checkpoints retain successful translations after API/network failures.
+  Reopening Glacier resumes unfinished automatic exports; the archive controls can
+  also retry or export sessions recorded with automatic export disabled. Stable
+  session IDs prevent duplicate exports. Interrupted/provisional captures are
+  explicitly labelled, never silently called complete.
 
 **Status:** prototype, not a notarized production or App Store release. Wispr is
 only required for Wispr mode and must be installed/signed in separately. Glacier
 does not embed Wispr or copy VoiceInk's implementation. The iOS target is a
-foreground captioning preview: no system-wide overlay or Word archive on iOS.
-Full transcript archiving on Mac currently requires Wispr; independent speech
-sessions retain recent captions, not a durable full lecture recording. Stop
-cancels pending recognition/cleanup, so an unfinished utterance may be omitted.
+foreground captioning preview: no system-wide overlay. Keep Glacier open while
+Word export finishes; iOS may suspend background work. WhisperKit guarantees the
+implemented graceful Stop path; Apple/OpenAI/Deepgram adapters currently retain
+available text with a finalization warning rather than guaranteeing final audio
+flushing. Crashes/power loss cannot recover audio that had not yet been recognized.
+The durable storage contains transcripts, not reusable audio recordings.
 No built-in speaker diarization, PDF or Markdown export is shipped. Accuracy,
 mobile thermals, real lecture latency and provider availability need live testing.
 
@@ -95,7 +106,7 @@ key in the app's password field, and use **Test AI Translation**. If macOS denie
 access to an existing key, use **Unlock saved key** and complete the OS prompt
 personally. This desktop key is separate from the GitHub Actions secret.
 
-Keep one Wispr Meeting Recorder window open on **Transcript**, scrolled to the
+For **Wispr mode only**, keep one Wispr Meeting Recorder window open on **Transcript**, scrolled to the
 bottom and not minimized. Click the ice cube to start/stop, or operate Wispr
 itself. Glacier observes recording state rather than assuming a click succeeded.
 Right-click the cube to open the 30-second history. The subtitle overlay passes
@@ -109,8 +120,11 @@ Install full Xcode (Command Line Tools alone do not include the iOS SDK), open
 `Glacier.xcodeproj`, select **GlacierIOS**, choose an iPhone simulator, and Run.
 For a physical device, select your signing team and a unique bundle identifier.
 The target supports iOS 17+, uses Base by default, and requests microphone/speech
-permissions on use. It stops capture on backgrounding; it cannot place captions
-over other iOS apps. User keys are saved in that device's Keychain.
+permissions on use. It stops capture on backgrounding and requests limited time to
+finish the audio tail; saved text survives suspension. Return to the foreground to
+finish/retry Word exports. Files are accessible under Glacier in Files and through
+Share Word document. It cannot place captions over other apps. User keys are saved
+in that device's Keychain.
 
 ```sh
 bash scripts/verify-ios.sh   # unsigned generic iOS Simulator build, full Xcode required
@@ -131,7 +145,9 @@ Apple microphone → AudioBridge → SpeechAnalyzer ────┘
                          → selected cloud service / installed Apple Translation
                          → CaptionModel → SwiftUI/AppKit overlay + recent history
 
-Stopped Wispr recording → full transcript copy → resumable archive job
+WhisperKit Stop → drain audio → finalize utterance → durable full transcript ─┐
+Stopped Wispr recording → full transcript copy ──────────────────────────────┘
+                         → resumable archive job
                          → chunk translation + AI digest → OOXML Word document
 ```
 
@@ -160,7 +176,8 @@ end-to-end latency guarantees.
 There is no hosted Glacier backend. The macOS process talks directly to the
 selected provider. Swift concurrency, `URLSession`, Foundation/NaturalLanguage,
 AppKit, SwiftUI, AVFoundation, Speech, Translation and Security are used. Word
-files are generated as OOXML and zipped with the system `zip` tool.
+files are generated as OOXML using a shared ZIP STORE writer; no shell process is
+needed on iOS.
 
 ## Privacy and limitations
 
@@ -176,7 +193,11 @@ files are generated as OOXML and zipped with the system `zip` tool.
   There is no automatic switch to a different cloud provider.
 - Archive progress is stored locally under
   `~/Library/Application Support/听课字幕/待归档` with restricted file permissions,
-  not application-level encryption. Exports contain lecture content.
+  not application-level encryption. Independent utterance journals and English.txt
+  are stored under `~/Library/Application Support/Glacier/Lectures/<session UUID>`
+  on Mac (the app sandbox's Application Support directory on iOS), with private
+  directory/file permissions. They remain after export so a failed export or a
+  pruned live history does not lose the original. Exports contain lecture content.
 - Wispr UI automation depends on its window structure and permissions. Interface
   changes, transcript virtualization and observer failures can interrupt captions.
   Locked screens/system-protected windows are not supported overlay surfaces.
@@ -327,3 +348,47 @@ by GitHub is separate from the keys saved in the desktop application.
 Implementation references: [OpenAI structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs),
 [GitHub macOS 26 runner labels](https://github.blog/changelog/2026-02-26-macos-26-is-now-generally-available-for-github-hosted-runners/),
 and [create-pull-request behavior](https://github.com/peter-evans/create-pull-request/blob/main/docs/concepts-guidelines.md).
+
+## Unattended local Mac updates
+
+`AGENTS.md` records the owner's standing instruction: finish authorized local
+feature work, run relevant checks, then commit and push to main without another
+reminder. `scripts/check_daily_workflow.py` protects the fixed daily cron, jitter,
+portable verification gate and conditional squash merge. It runs in portable CI
+and the daily verify job. An intentional policy change must update the guard too.
+
+Keep the checkout in `~/Developer/Glacier` (outside macOS-protected Documents and
+Desktop folders) so the background job does not need Full Disk Access. If moving
+an existing checkout, preserve all files and optionally leave a symbolic link at
+its former location. Install the per-user launch agent once from the new location:
+
+```sh
+python3 scripts/install_local_updater.py
+```
+
+It checks at 1 PM on the Mac's calendar and hourly after 1 PM America/New_York
+until that day's update succeeds. The hourly Eastern-time gate handles DST,
+sleep/wake and travel. It uses `git pull --rebase origin main` only on a clean main
+checkout with no local-only commits. It never stashes, discards, force-pushes or
+publishes arbitrary local edits. A dirty checkout, active Glacier process or lost
+network defers the update; it retries on later scheduled invocations.
+
+Each new revision is built and fully verified in a detached worktree. Only a
+successful, signed build is atomically installed at `/Applications/Glacier.app`;
+the previous app is retained as a rollback copy. No lecture is terminated. The
+installed app takes effect at its next launch. Existing ad-hoc signing limitations
+still apply: macOS may ask to renew permissions/key access after an update.
+
+```sh
+bash scripts/sync_and_build_local.sh --check-only # read-only eligibility check
+bash scripts/sync_and_build_local.sh              # sync, verify, install now
+launchctl print gui/$(id -u)/com.ar2mis.glacier.local-updater
+```
+
+Logs, the installed commit ID, and rollback app are in
+`~/Library/Application Support/Glacier/Updater`. The LaunchAgent is
+`~/Library/LaunchAgents/com.ar2mis.glacier.local-updater.plist`. It runs while the
+user is logged in; a powered-off Mac, OS privacy denial, provider outage, or failing
+native build cannot be guaranteed away. Such failures preserve the installed app
+and are recorded in the logs. The helper bootstrap is outside Documents so even
+an OS denial of repository access can be logged.

@@ -1,5 +1,8 @@
 import SwiftUI
 import GlacierCore
+import UIKit
+
+typealias CaptionError = GlacierCoreError
 
 @MainActor final class MobileCaptions: ObservableObject {
     @Published var provider = SpeechProvider(rawValue: UserDefaults.standard.string(forKey: "speechProvider") ?? "") ?? .whisperKit
@@ -15,6 +18,15 @@ import GlacierCore
     @Published var running = false
     @Published var busy = false
     @Published var history: [String] = []
+    let archive = LectureArchive()
+    @Published var courseName = UserDefaults.standard.string(forKey: "courseName") ?? ""
+    @Published var autoArchive = (UserDefaults.standard.object(forKey: "autoArchive") as? Bool) ?? true
+    @Published private(set) var finishing = false
+    private var sessionID: UUID?
+    private var captureFailure: String?
+    private var finishingTask: Task<Void, Never>?
+    private var backgroundTask = UIBackgroundTaskIdentifier.invalid
+    init() { archive.recoverSavedLectures() }
     private var capture: (any StreamingTranscriber)?
     private var recording: Task<Void, Never>?
     private var translating: Task<Void, Never>?
@@ -35,13 +47,21 @@ import GlacierCore
         UserDefaults.standard.set(whisperModel.rawValue, forKey: "whisperModel")
         UserDefaults.standard.set(glossary, forKey: "courseVocabulary")
         UserDefaults.standard.set(refineModel, forKey: "refineModel")
+        UserDefaults.standard.set(courseName, forKey: "courseName")
+        UserDefaults.standard.set(autoArchive, forKey: "autoArchive")
         generation = UUID(); let token = generation
+        captureFailure = nil
         busy = true; context = []; queue = []; history = []; rawText = ""
         recording = Task {
             do {
                 let openAI = cleanup || provider == .openAI ? try CredentialStore.read("openai") : ""
                 refiner = cleanup ? TranscriptRefiner(key: openAI, model: refineModel) : nil
                 let key = provider == .deepgram ? try CredentialStore.read("deepgram") : openAI
+                let saved = LectureSession(course: courseName, source: provider.title, glossary: glossary,
+                                           archiveModel: "gpt-4o-mini", autoArchive: autoArchive)
+                try await archive.lectures.create(saved)
+                sessionID = saved.id
+                try Task.checkCancellation()
                 let capture = TranscriberFactory.make(provider: provider, model: whisperModel, key: key)
                 self.capture = capture
                 let stream = try await capture.start { [weak self] message in
@@ -52,21 +72,28 @@ import GlacierCore
                 busy = false; running = true
                 for try await event in stream {
                     guard generation == token, !Task.isCancelled else { return }
+                    try await archive.lectures.append(event, to: saved.id)
+                    guard generation == token else { return }
+                    if finishing { continue }
                     rawText = event.text
                     if event.isFinal {
                         history.append("ASR: \(event.text)")
                         history = Array(history.suffix(200))
                         if refiner != nil {
-                            // Fail visibly rather than silently dropping source under overload.
-                            guard queue.count < 8 else { throw GlacierCoreError.message("Cleanup is falling behind. Stop and choose a faster model or English-only mode.") }
+                            guard queue.count < 8 else {
+                                status = "Live cleanup is behind; complete English is saved for the final Word export."
+                                continue
+                            }
                             queue.append(event.text); drain(token)
                         } else { caption = .init(english: event.text, chinese: "") }
                     }
                 }
-                if generation == token { stop() }
+                if generation == token && !finishing { stop() }
             } catch {
                 guard generation == token else { return }
-                stop(); status = error.localizedDescription
+                captureFailure = error.localizedDescription
+                if !finishing { stop() }
+                status = error.localizedDescription
             }
         }
     }
@@ -94,11 +121,40 @@ import GlacierCore
             }
         }
     }
+    func resumeArchives() { archive.recoverSavedLectures(excluding: sessionID) }
     func stop() {
-        generation = UUID(); recording?.cancel(); recording = nil
-        translating?.cancel(); translating = nil; capture?.stop(); capture = nil; queue = []
-        busy = false; running = false; status = "Stopped."
+        guard !finishing else { return }
+        guard running, let capture, let id = sessionID else {
+            generation = UUID(); recording?.cancel(); recording = nil
+            translating?.cancel(); translating = nil; capture?.stop(); capture = nil; queue = []
+            busy = false; running = false; status = "Stopped."; return
+        }
+        let consumer = recording
+        finishing = true; busy = true; running = false
+        translating?.cancel(); translating = nil; queue = []
+        status = "Microphone stopped. Finishing the last utterance and saving the lecture…"
+        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Finish lecture") { [weak self] in
+            guard let self else { return }
+            self.captureFailure = "iOS suspended finalization; the saved transcript may have a provisional final utterance."
+            self.capture?.stop()
+            if self.backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(self.backgroundTask); self.backgroundTask = .invalid }
+        }
+        finishingTask = Task {
+            defer {
+                capture.stop(); self.capture = nil; recording = nil; sessionID = nil
+                generation = UUID(); finishing = false; busy = false; finishingTask = nil
+                if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask); backgroundTask = .invalid }
+            }
+            do { try await capture.finish() } catch { captureFailure = captureFailure ?? error.localizedDescription }
+            await consumer?.value
+            do {
+                let saved = try await archive.lectures.finish(id, warning: captureFailure)
+                if saved.autoArchive { try await archive.enqueueSavedLecture(saved) }
+                status = saved.warning == nil ? "Lecture saved. Word export continues below." : "Saved with an interruption warning; see the archive."
+            } catch { status = "Archive pending: \(error.localizedDescription). Saved text is retained for recovery." }
+        }
     }
+
 }
 
 struct MobileContent: View {
@@ -114,7 +170,7 @@ struct MobileContent: View {
                     Text(model.status).font(.caption).textSelection(.enabled)
                     Button(model.running || model.busy ? "Stop" : "Start recording") {
                         if model.running || model.busy { model.stop() } else { model.start() }
-                    }.buttonStyle(.borderedProminent).tint(.cyan)
+                    }.buttonStyle(.borderedProminent).tint(.cyan).disabled(model.finishing)
                 }
                 Section("Transcription") {
                     Picker("Provider", selection: $model.provider) { ForEach(SpeechProvider.allCases) { Text($0.title).tag($0) } }
@@ -135,13 +191,29 @@ struct MobileContent: View {
                     Button("Save keys on this device") { model.saveKeys() }
                     Text("Cleanup sends transcript text, recent context and vocabulary to OpenAI. Turn it off for local English-only captions. Your GitHub secret is separate.").font(.caption)
                 }.disabled(model.running || model.busy)
+                Section("Lecture archive") {
+                    TextField("Course name (optional)", text: $model.courseName).disabled(model.running || model.busy)
+                    Toggle("Export Word automatically after Stop", isOn: $model.autoArchive).disabled(model.running || model.busy)
+                    Text("Full English, full Chinese, Chinese summary, mind map and English outline. Exports send the saved transcript to OpenAI and require your API key. Keep Glacier open until export finishes.").font(.caption)
+                    MobileArchiveStatus(archive: model.archive, disabled: model.running || model.busy)
+                }
                 Section("Recent session text") {
                     ForEach(Array(model.history.enumerated()), id: \.offset) { _, text in Text(text).textSelection(.enabled) }
                 }
-                Section { Text("Keep Glacier in the foreground. iOS captions appear inside Glacier; the Mac's system-wide overlay and Word archive are not part of this iOS preview.").font(.caption) }
+                Section { Text("Keep Glacier in the foreground. iOS captions appear inside Glacier; system-wide overlays are Mac-only. Word files are saved in Glacier’s Documents folder and can be shared below.").font(.caption) }
             }.scrollContentBackground(.hidden).background(Color.cyan.opacity(0.08)).navigationTitle("🧊 Glacier")
         }
-        .onChange(of: scenePhase) { _, phase in if phase == .background { model.stop() } }
+        .onChange(of: scenePhase) { _, phase in if phase == .background { model.stop() }; if phase == .active { model.resumeArchives() } }
+    }
+}
+
+struct MobileArchiveStatus: View {
+    @ObservedObject var archive: LectureArchive
+    let disabled: Bool
+    var body: some View {
+        Text(archive.status).font(.caption).textSelection(.enabled)
+        Button("Resume saved lecture exports") { archive.recoverSavedLectures(includeManual: true) }.disabled(disabled || archive.working)
+        if let url = archive.lastURL { ShareLink("Share Word document", item: url) }
     }
 }
 

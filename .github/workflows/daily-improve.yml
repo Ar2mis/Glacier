@@ -17,7 +17,7 @@ concurrency:
 jobs:
   propose:
     # Secrets are never exposed to pull_request code or a manually selected feature branch.
-    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    if: github.ref == 'refs/heads/main' && github.event.repository.default_branch == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 260
     permissions:
@@ -35,7 +35,7 @@ jobs:
           sleep "$delay"
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ github.event.repository.default_branch }}
+          ref: main
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
@@ -103,7 +103,7 @@ jobs:
         uses: peter-evans/create-pull-request@3ffccacd46053766916f087ce41d627c0b8cf2d1 # v8
         with:
           token: ${{ github.token }}
-          base: ${{ github.event.repository.default_branch }}
+          base: main
           branch: codex/daily-improve-${{ github.run_id }}-${{ github.run_attempt }}
           commit-message: 'chore: propose scoped daily improvement'
           title: 'Glacier: daily improvement #${{ github.run_number }} — checks pending'
@@ -133,6 +133,8 @@ jobs:
         with:
           name: proposal
           path: .daily-improve
+      - name: Enforce protected daily schedule and merge policy
+        run: python3 scripts/check_daily_workflow.py
       - name: Check portable baseline and proposal, then record portable-only completion
         run: python3 scripts/daily_improve.py --apply-proposal .daily-improve/proposal.json --portable --complete-portable
       - name: Preserve failed check diagnostics without publishing a patch
@@ -165,7 +167,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ github.event.repository.default_branch }}
+          ref: main
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -203,7 +205,7 @@ jobs:
         uses: peter-evans/create-pull-request@3ffccacd46053766916f087ce41d627c0b8cf2d1 # v8
         with:
           token: ${{ github.token }}
-          base: ${{ github.event.repository.default_branch }}
+          base: main
           branch: codex/daily-improve-${{ github.run_id }}-${{ github.run_attempt }}
           commit-message: 'chore: complete daily improvement after portable checks'
           title: 'Glacier: daily improvement #${{ github.run_number }} — portable checks passed'
@@ -221,7 +223,7 @@ jobs:
           ORIGINAL_PR: ${{ needs.draft.outputs.number }}
           EXPECTED_HEAD: ${{ steps.pr.outputs.pull-request-head-sha }}
           EXPECTED_BASE: ${{ needs.propose.outputs.base }}
-          BASE_BRANCH: ${{ github.event.repository.default_branch }}
+          BASE_BRANCH: main
         run: |
           test "$PR_NUMBER" = "$ORIGINAL_PR"
           test -n "$EXPECTED_HEAD"

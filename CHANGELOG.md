@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Complete WhisperKit lectures and unattended local updates (2026-11-13)
+- CORE-06: persist every GlacierCore ASR utterance in a private on-device journal, replacing partial revisions without duplicating text and retaining raw English after export.
+- WhisperKit Stop drains queued PCM and the resampler tail, decodes residual speech, waits for persistence, and queues the existing complete-transcript archive. Captions hide immediately; repeat Stop/restart cannot interrupt finalization.
+- Mac and iOS now export Word without Wispr: Chinese summary, rendered mind map, English outline, full English then full Chinese. Mac writes course/topic folders on Desktop; iOS writes Documents/Glacier with sharing and foreground recovery.
+- Preserve translation checkpoints across API/network failures and app relaunches. Stable session IDs make archive handoff idempotent. Interrupted captures and adapters without guaranteed final audio flushing are explicitly labelled.
+- Reuse one OOXML/ZIP writer across Mac and iOS; retain the Mac Wispr archive and existing credentials/providers. Raw audio files are not retained; crashes cannot reconstruct audio that was never recognized.
+- Add AGENTS.md standing instructions to verify, commit and push authorized changes to main, plus a CI guard for 01:30 UTC cron, scheduled-only four-hour jitter and conditional main squash merge.
+- Add a 1 PM Eastern local updater with hourly retry eligibility, clean-checkout/local-commit guards, detached native verification, signature checks, atomic installation and rollback copy. Active Glacier sessions defer installation.
+- Local verification: all native suites and shared-core checks pass, including 1,002 saved utterances, final-audio draining, 19 session assertions, network-loss archive recovery, accelerated soak and Word generation; 30 portable automation/updater tests pass. Independently validated DOCX ZIP/XML and visually checked all eight synthetic document pages. Native iOS compilation is checked by the hosted Simulator job.
+
 ### Shared WhisperKit transcription and bilingual refinement (2026-11-13)
 - Added GlacierCore with pinned WhisperKit 1.1.1, Base/Turbo selection, bounded PCM capture, Apple SFSpeechRecognizer, OpenAI chunked audio transcription and Deepgram streaming options.
 - Added one-pass English cleanup/Chinese translation with strict structured output, course vocabulary, preserved source text, bounded context and explicit cloud audio/text disclosure.

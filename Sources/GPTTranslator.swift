@@ -30,6 +30,7 @@ enum APIKeyStore {
         if let key = cached[provider] { return key }
         // LAContext does not suppress dialogs for macOS file-based keychains.
         // Ask the legacy implementation to fail closed rather than show UI.
+        #if os(macOS)
         var wasAllowed = DarwinBoolean(false)
         if !allowInteraction {
             guard SecKeychainGetUserInteractionAllowed(&wasAllowed) == errSecSuccess,
@@ -38,6 +39,7 @@ enum APIKeyStore {
             }
         }
         defer { if !allowInteraction { SecKeychainSetUserInteractionAllowed(wasAllowed.boolValue) } }
+        #endif
         var request = query(provider)
         request[kSecReturnData as String] = true
         request[kSecMatchLimit as String] = kSecMatchLimitOne

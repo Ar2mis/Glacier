@@ -19,13 +19,14 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundleDisplayName</key><string>Glacier</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFile</key><string>Glacier</string>
-<key>CFBundleVersion</key><string>4</string>
-<key>CFBundleShortVersionString</key><string>0.4.0</string>
+<key>CFBundleVersion</key><string>6</string>
+<key>CFBundleShortVersionString</key><string>0.6.0</string>
 <key>LSMinimumSystemVersion</key><string>26.0</string>
 <key>LSUIElement</key><true/>
 <key>NSMicrophoneUsageDescription</key><string>将讲话实时转为字幕。WhisperKit/Apple 在本机处理；选择 OpenAI/Deepgram 时会发送音频到该服务。</string>
 <key>NSSpeechRecognitionUsageDescription</key><string>将英语讲话转为实时字幕。</string>
 </dict></plist>
 PLIST
+/usr/libexec/PlistBuddy -c "Add :GlacierSourceRevision string $(git rev-parse HEAD)" "$APP/Contents/Info.plist"
 codesign --force --sign - "$APP"
 printf 'Built: %s\n' "$APP"

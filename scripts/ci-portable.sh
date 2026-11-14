@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+python3 scripts/check_daily_workflow.py
 # No Apple SDK or Swift execution: these are portable automation checks only.
 for script in scripts/*.sh; do bash -n "$script"; done
 python3 - <<'PY'

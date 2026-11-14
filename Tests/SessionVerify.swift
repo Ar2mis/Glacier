@@ -1,11 +1,32 @@
 import Foundation
 import AppKit
+import GlacierCore
 
 actor Calls {
     var values: [String] = []
     func record(_ value: String) -> Int { values.append(value); return values.count }
     func count() -> Int { values.count }
     func contains(_ value: String) -> Bool { values.contains(value) }
+}
+
+@MainActor final class FinalizingSpeechFixture: StreamingTranscriber {
+    var finishCalls = 0
+    var continuation: AsyncThrowingStream<TranscriptEvent, Error>.Continuation?
+    func start(status: @escaping @MainActor (String) -> Void) async throws -> AsyncThrowingStream<TranscriptEvent, Error> {
+        let (stream, output) = AsyncThrowingStream<TranscriptEvent, Error>.makeStream()
+        continuation = output
+        output.yield(.init(id: 0, text: "The first lecture paragraph.", isFinal: true))
+        output.yield(.init(id: 1, text: "The second lecture paragraph.", isFinal: true))
+        output.yield(.init(id: 2, text: "The last draft", isFinal: false))
+        return stream
+    }
+    func finish() async throws {
+        finishCalls += 1
+        try await Task.sleep(for: .milliseconds(80))
+        continuation?.yield(.init(id: 2, text: "The last finalized sentence.", isFinal: true))
+        continuation?.finish()
+    }
+    func stop() { continuation?.finish() }
 }
 
 @main enum SessionVerify {
@@ -134,6 +155,33 @@ actor Calls {
         }
         await wait(0.6)
         check(!model.visible && !model.running && !model.quickBusy, "thirty rapid start-stop cycles leave no active captions")
+        let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("GlacierStopTest-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let lectures = LectureSessionStore(directory: temporary.appendingPathComponent("lectures"))
+        let archive = LectureArchive(pendingDirectory: temporary.appendingPathComponent("pending"), outputDirectory: temporary.appendingPathComponent("exports"), lectures: lectures) { _, input in
+            let object = try JSONSerialization.jsonObject(with: Data(input.utf8)) as! [String: Any]
+            if let parts = object["parts"] as? [[String: Any]] {
+                return try JSONSerialization.data(withJSONObject: ["translations": parts.map { ["id": $0["id"]!, "chinese": "完整中文测试译文。"] }, "notes": ["本节课说明了研究过程。"]])
+            }
+            return Data(#"{"title":"课堂归档测试","chineseSummary":["全部已保存文字用于课堂复习。"],"englishOutline":[{"title":"Lecture content","points":["Retain the final utterance."]}],"mindMap":[{"title":"课堂内容","points":["完整原文","末句完成"]}]}"#.utf8)
+        }
+        let fixture = FinalizingSpeechFixture()
+        var starts = 0
+        let independent = CaptionModel(simulation: true, archive: archive, coreFactory: { _, _, _ in starts += 1; return fixture }, operation: { source, _, _, _ in "译文：" + source })
+        independent.inputMode = "whisperkit"; independent.translationMode = "gpt"
+        independent.autoArchive = true; independent.courseName = "Stop regression"
+        independent.start()
+        await waitUntil("independent capture started") { independent.running && independent.english == "The last draft" }
+        independent.stop(); independent.stop(); independent.start()
+        check(independent.drainingCore && !independent.visible && starts == 1, "Stop hides captions and prevents restart until final audio is saved")
+        await waitUntil("independent lecture exported without Wispr") { !independent.busy && archive.lastURL != nil }
+        check(fixture.finishCalls == 1, "repeated Stop finalizes exactly once")
+        let sessions = try FileManager.default.contentsOfDirectory(at: temporary.appendingPathComponent("lectures"), includingPropertiesForKeys: nil)
+        let id = UUID(uuidString: sessions.first!.lastPathComponent)!
+        let savedEnglish = try await lectures.english(id)
+        check(savedEnglish == "The first lecture paragraph.\n\nThe second lecture paragraph.\n\nThe last finalized sentence.", "Word archive receives all paragraphs and the finalized tail, never the stale partial")
+        let stored = try await lectures.session(id)
+        check(stored.exportedURL == archive.lastURL && stored.warning == nil, "successful independent export is durably marked for idempotent recovery")
         let report: [String: Any] = ["tested_at": ISO8601DateFormatter().string(from: Date()), "microphone_used": false,
             "real_wispr_recording_started": false, "translator": "deterministic simulated service", "checks": passed, "count": passed.count]
         try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: ".build/session-report.json"))

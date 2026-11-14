@@ -37,6 +37,17 @@ public enum GlacierCoreError: LocalizedError, Sendable {
 @MainActor public protocol StreamingTranscriber: AnyObject {
     func start(status: @escaping @MainActor (String) -> Void) async throws -> AsyncThrowingStream<TranscriptEvent, Error>
     func stop()
+    /// Stop input, drain queued audio and deliver the final utterance before returning.
+    func finish() async throws
+}
+
+public extension StreamingTranscriber {
+    // Other adapters retain their latest provisional text and explicitly report
+    // that they do not yet guarantee a server/recognizer final result on Stop.
+    func finish() async throws {
+        stop()
+        throw GlacierCoreError.message("This provider cannot guarantee final audio flushing; latest provisional text was retained.")
+    }
 }
 
 @MainActor public enum TranscriberFactory {
@@ -58,6 +69,11 @@ public struct UtteranceBuffer {
     private var silentSamples = 0
     private let limit: Int
     public init(maxSeconds: Double = 12) { limit = Int(min(20, max(1, maxSeconds.isFinite ? maxSeconds : 12)) * 16000) }
+    public mutating func flush() -> [Float]? {
+        let remaining = hasSpeech && !samples.isEmpty ? samples : nil
+        samples = []; hasSpeech = false; silentSamples = 0
+        return remaining
+    }
     public mutating func append(_ frame: [Float]) -> [Float]? {
         guard !frame.isEmpty else { return nil }
         let finite = frame.map { $0.isFinite ? min(1, max(-1, $0)) : 0 }

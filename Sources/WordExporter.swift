@@ -1,5 +1,10 @@
 import Foundation
+import GlacierCore
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 
 enum WordExporter {
     static func xml(_ text: String) -> String {
@@ -10,7 +15,7 @@ enum WordExporter {
     private static func paragraph(_ text: String, style: String = "Normal", newPage: Bool = false) -> String {
         "<w:p><w:pPr><w:pStyle w:val=\"\(style)\"/>\(newPage ? "<w:pageBreakBefore/>" : "")</w:pPr><w:r><w:t xml:space=\"preserve\">\(xml(text))</w:t></w:r></w:p>"
     }
-    static func export(_ job: ArchiveJob, desktop: URL) throws -> URL {
+    @MainActor static func export(_ job: ArchiveJob, desktop: URL) throws -> URL {
         guard let digest = job.digest, job.translations.map(\.id).sorted() == job.parts.map(\.id),
               job.parts.map(\.text).joined() == job.english else {
             throw CaptionError.message("文档完整性校验失败，未保存为完整课堂记录。")
@@ -34,8 +39,13 @@ enum WordExporter {
         try map.data.write(to: working.appendingPathComponent("word/media/mindmap.png"))
         let title = job.course.isEmpty ? digest.title : job.course + " " + digest.title
         var body = paragraph(title, style: "Title")
-        body += paragraph("\(formatter.string(from: job.created))  来源 Wispr Note", style: "Subtitle")
-        body += paragraph("本文件保存本次录音的完整英文转录与完整中文翻译，并提供中文课堂总结、思维导图和英文知识点提纲，供课后复习。学习材料及中文译文由 AI 根据转录生成，原文保留 Wispr 识别结果。")
+        body += paragraph("\(formatter.string(from: job.created))  来源 \(job.source ?? "Wispr Note")", style: "Subtitle")
+        if let warning = job.captureWarning {
+            body += paragraph("录音恢复说明", style: "Heading1")
+            body += paragraph(warning)
+            body += paragraph("以下文档覆盖全部已保存文字，不能保证涵盖中断时尚未识别的音频；末段可能为临时识别结果。")
+        }
+        body += paragraph("本文件保留全部已保存的英文识别原文，随后提供完整中文翻译。中文课堂总结、思维导图和英文知识点提纲由 AI 根据转录生成，供课后复习；请核对术语和识别错误。")
         body += paragraph("中文课堂总结", style: "Heading1")
         for section in digest.chineseSummary { body += paragraph(section) }
         body += paragraph("思维导图", style: "Heading1", newPage: true)
@@ -76,18 +86,16 @@ enum WordExporter {
         try write("[Content_Types].xml", """
         <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>
         """)
-        let archive = working.appendingPathComponent("result.docx")
-        let zip = Process(); zip.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
-        zip.currentDirectoryURL = working
-        zip.arguments = ["-q", "-r", archive.path, "[Content_Types].xml", "_rels", "word"]
-        try zip.run(); zip.waitUntilExit()
-        guard zip.terminationStatus == 0 else { throw CaptionError.message("Word 文档打包失败。") }
-        try FileManager.default.moveItem(at: archive, to: output)
+        // The same package writer is used on Mac and iOS, without a shell process.
+        let paths = ["[Content_Types].xml", "_rels/.rels", "word/document.xml", "word/styles.xml", "word/footer1.xml", "word/_rels/document.xml.rels", "word/media/mindmap.png"]
+        let entries = try paths.map { ($0, try Data(contentsOf: working.appendingPathComponent($0))) }
+        try StoredZip.archive(entries).write(to: output, options: .atomic)
         return output
     }
 
-    static func mindMap(_ digest: LectureDigest) throws -> (data: Data, width: Double, height: Double) {
+    @MainActor static func mindMap(_ digest: LectureDigest) throws -> (data: Data, width: Double, height: Double) {
         let width = 1400, height = max(800, digest.mindMap.count * 240 + 80)
+        #if os(macOS)
         guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height,
             bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
             let graphics = NSGraphicsContext(bitmapImageRep: bitmap) else { throw CaptionError.message("思维导图渲染失败。") }
@@ -131,5 +139,46 @@ enum WordExporter {
         node(root, digest.title, major: true)
         guard let png = bitmap.representation(using: .png, properties: [:]) else { throw CaptionError.message("无法生成思维导图图片。") }
         return (png, Double(width), Double(height))
+        #else
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1; format.opaque = true
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: width, height: height), format: format)
+        let png = renderer.pngData { _ in
+            UIColor.white.setFill(); UIRectFill(CGRect(x: 0, y: 0, width: width, height: height))
+            func node(_ rect: CGRect, _ text: String, major: Bool) {
+                (major ? UIColor(red: 0.9, green: 0.94, blue: 0.98, alpha: 1) : UIColor(white: 0.96, alpha: 1)).setFill()
+                UIBezierPath(roundedRect: rect, cornerRadius: 14).fill()
+                let style = NSMutableParagraphStyle(); style.alignment = .center; style.lineBreakMode = .byWordWrapping
+                let inner = rect.insetBy(dx: 16, dy: 12)
+                var size: CGFloat = major ? 30 : 28
+                var attrs: [NSAttributedString.Key: Any] = [:]
+                var bounds = CGRect.zero
+                repeat {
+                    attrs = [.font: UIFont.systemFont(ofSize: size, weight: major ? .semibold : .regular), .foregroundColor: UIColor.black, .paragraphStyle: style]
+                    bounds = (text as NSString).boundingRect(with: inner.size, options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attrs, context: nil)
+                    size -= 1
+                } while bounds.height > inner.height && size >= 18
+                (text as NSString).draw(with: CGRect(x: inner.minX, y: inner.midY - bounds.height / 2, width: inner.width, height: bounds.height), options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attrs, context: nil)
+            }
+            func line(_ a: CGPoint, _ b: CGPoint) {
+                UIColor(red: 0.45, green: 0.55, blue: 0.65, alpha: 1).setStroke()
+                let path = UIBezierPath(); path.lineWidth = 3; path.move(to: a)
+                path.addCurve(to: b, controlPoint1: CGPoint(x: (a.x+b.x)/2, y: a.y), controlPoint2: CGPoint(x: (a.x+b.x)/2, y: b.y)); path.stroke()
+            }
+            let root = CGRect(x: 20, y: Double(height)/2 - 130, width: 240, height: 260)
+            for (index, branch) in digest.mindMap.enumerated() {
+                let center = 160.0 + Double(index) * 240
+                let branchRect = CGRect(x: 330, y: center - 52, width: 300, height: 104)
+                line(CGPoint(x: root.maxX, y: root.midY), CGPoint(x: branchRect.minX, y: center))
+                for (pointIndex, point) in branch.points.enumerated() {
+                    let y = center - Double(branch.points.count - 1) * 38 + Double(pointIndex) * 76
+                    let leaf = CGRect(x: 710, y: y - 34, width: 665, height: 68)
+                    line(CGPoint(x: branchRect.maxX, y: center), CGPoint(x: leaf.minX, y: y)); node(leaf, point, major: false)
+                }
+                node(branchRect, branch.title, major: true)
+            }
+            node(root, digest.title, major: true)
+        }
+        return (png, Double(width), Double(height))
+        #endif
     }
 }

@@ -8,13 +8,13 @@ struct ArchiveControls: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("课后归档").font(.headline)
             TextField("课程名称（留空时由 AI 根据主要内容命名）", text: $model.courseName)
-                .textFieldStyle(.roundedBorder)
-            Toggle("Wispr 停止录音后自动生成 Word", isOn: $model.autoArchive)
-            Text("保存到桌面同名文件夹：中文总结、思维导图、英文知识点提纲，然后完整英文原文，再完整中文翻译。")
+                .textFieldStyle(.roundedBorder).disabled(model.running || model.busy)
+            Toggle("停止录音后自动生成 Word", isOn: $model.autoArchive).disabled(model.running || model.busy)
+            Text("保存到桌面同名文件夹：中文总结、思维导图、英文知识点提纲，然后完整英文原文，再完整中文翻译。全文会发送给所选 AI 服务；失败时保留原文和进度。")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
-                Button("归档当前已结束的录音") { model.archiveCurrent() }.disabled(archive.working)
-                Button("继续未完成的归档") { archive.resume(model: model.gptModel) }.disabled(archive.working || !model.hasAPIKey)
+                Button("归档已保存的录音") { model.archiveCurrent() }.disabled(archive.working || model.running || model.busy)
+                Button("继续未完成的归档") { archive.recoverSavedLectures(includeManual: true, excluding: nil) }.disabled(archive.working || model.running || model.busy || !model.hasAPIKey)
             }
             Text(archive.status).font(.caption).textSelection(.enabled)
             if let url = archive.lastURL {
@@ -34,7 +34,7 @@ struct HistoryView: View {
                 .font(.caption).foregroundStyle(.secondary)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 18) {
-                    if entries.isEmpty { Text("还没有最近 30 秒的字幕。连接 Wispr 并开始讲话后，再从设置或菜单栏打开回看。").foregroundStyle(.secondary) }
+                    if entries.isEmpty { Text("还没有最近 30 秒的字幕。开始录音并讲话后，再从设置或菜单栏打开回看。").foregroundStyle(.secondary) }
                     ForEach(entries) { entry in
                         VStack(alignment: .leading, spacing: 5) {
                             Text(entry.firstSeen, style: .time).font(.caption).foregroundStyle(.secondary)
