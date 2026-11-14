@@ -78,7 +78,7 @@ final class CaptionModel: ObservableObject {
     @Published var inputMode = UserDefaults.standard.string(forKey: "inputMode") ?? "whisperkit" {
         didSet { UserDefaults.standard.set(inputMode, forKey: "inputMode") }
     }
-    @Published var whisperModel = WhisperModel(rawValue: UserDefaults.standard.string(forKey: "whisperModel") ?? "") ?? .base {
+    @Published var whisperModel = WhisperModel(rawValue: UserDefaults.standard.string(forKey: "whisperModel") ?? "") ?? .turbo {
         didSet { UserDefaults.standard.set(whisperModel.rawValue, forKey: "whisperModel") }
     }
     @Published var refineEnabled = (UserDefaults.standard.object(forKey: "refineEnabled") as? Bool) ?? true {
@@ -111,6 +111,10 @@ final class CaptionModel: ObservableObject {
     @Published var connectionStatus = ""
     @Published var credentialStatus = "Not tested"
     @Published var credentialTestPassed: Bool?
+    @Published var captionHoldSeconds = (UserDefaults.standard.object(forKey: "captionHoldSeconds") as? Double) ?? 5 {
+        didSet { UserDefaults.standard.set(captionHoldSeconds, forKey: "captionHoldSeconds") }
+    }
+    @Published var activeTranslationEngine = "等待翻译"
     @Published var fallbackStatus = "Checking Apple English–Chinese language pack…"
     @Published var queuedSentences = 0
     var canStart: Bool { !busy }
@@ -134,11 +138,12 @@ final class CaptionModel: ObservableObject {
     private var currentCaptionID = ""
     private var appleSegment = 0
     private var recordingActive = false
-    private var displayedTranslation: CaptionJob?
+    private var readingBuffer = CaptionReadingBuffer()
+    private var readingTask: Task<Void, Never>?
+    private var stablePrefix = StableCaptionPrefix()
     private var gpt: GPTTranslator?
     private var translationEpoch = UUID()
     private var wisprObserving = false
-    private var translatedAt = Date.distantPast
     private var translationProblem: String?
     let simulation: Bool
     private let translationOverride: CaptionTranslationOperation?
@@ -263,6 +268,7 @@ final class CaptionModel: ObservableObject {
                 if !draft.isEmpty { try await Task.detached { try APIKeyStore.save(draft, provider: selected) }.value }
                 hasAPIKey = true; apiKeyDraft = ""; credentialTestPassed = true
                 credentialStatus = "Connected · \(selected.title) / \(model)"
+                activeTranslationEngine = "\(selected.title) · \(model)"
                 english = source; chinese = translated; visible = true; layoutChanged?()
                 status = "AI 翻译测试成功 · 密钥已持久保存"
             } catch {
@@ -288,6 +294,7 @@ final class CaptionModel: ObservableObject {
                 let response = try await session.translate(source)
                 try Task.checkCancellation()
                 english = source; chinese = response.targetText; visible = true; layoutChanged?()
+                activeTranslationEngine = "Apple 本机翻译"
                 status = "Apple 本机翻译测试成功 · 无需 API key 或云端请求"
             } catch { if !Task.isCancelled { status = "Apple 翻译暂不可用；请联网准备语言包后重试" } }
         }
@@ -418,7 +425,7 @@ final class CaptionModel: ObservableObject {
                 try await archive.lectures.create(saved)
                 coreSessionID = saved.id
                 try Task.checkCancellation()
-                let capture = coreFactory?(provider, whisperModel, key) ?? TranscriberFactory.make(provider: provider, model: whisperModel, key: key)
+                let capture = coreFactory?(provider, whisperModel, key) ?? TranscriberFactory.make(provider: provider, model: whisperModel, key: key, vocabulary: glossary)
                 coreCapture = capture
                 let events = try await capture.start { [weak self] text in
                     guard self?.generation == token else { return }; self?.status = text
@@ -434,8 +441,9 @@ final class CaptionModel: ObservableObject {
                             try await self.archive.lectures.append(event, to: saved.id)
                             guard self.generation == token else { return }
                             if self.drainingCore { continue }
-                            if event.isFinal { self.displaySegments([.init(id: event.id, text: event.text)]) }
-                            else {
+                            if let stable = self.stablePrefix.observe(event) {
+                                self.displaySegments([.init(id: event.id, text: stable)])
+                            } else if self.readingBuffer.current == nil {
                                 self.english = event.text; self.chinese = "识别中…"; self.layoutChanged?()
                             }
                         }
@@ -473,7 +481,15 @@ final class CaptionModel: ObservableObject {
     private func resetCaptionSession() {
         translationTask?.cancel(); translationEpoch = UUID()
         liveBuffer = LiveCaptionBuffer(); historyEntries = []; currentCaptionID = ""
-        displayedTranslation = nil; queuedSentences = 0; translationProblem = nil
+        readingTask?.cancel(); readingBuffer = CaptionReadingBuffer(); stablePrefix = StableCaptionPrefix()
+        queuedSentences = 0; translationProblem = nil
+        readingTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(100))
+                guard !Task.isCancelled, let self else { return }
+                if self.running, let next = self.readingBuffer.advance(hold: self.captionHoldSeconds) { self.present(next) }
+            }
+        }
         english = "Waiting for speech…"; chinese = "等待实时文字…"
     }
     // Same ingress for real Wispr observations and deterministic simulation.
@@ -508,10 +524,8 @@ final class CaptionModel: ObservableObject {
     private func displaySegments(_ segments: [TranscriptSegment]) {
         guard let latest = liveBuffer.update(segments) else { return }
         currentCaptionID = latest.id
-        // Keep each pair together during short ASR revisions, but never freeze
-        // the original line indefinitely behind a stalled translation service.
-        if displayedTranslation == nil || Date().timeIntervalSince(translatedAt) > 4 {
-            displayedTranslation = nil
+        // Keep the last bilingual pair until its successor is actually ready.
+        if readingBuffer.current == nil {
             english = latest.english
             if let translationProblem { chinese = translationProblem }
             else { chinese = latest.chinese.isEmpty ? "正在翻译…" : latest.chinese }
@@ -520,19 +534,22 @@ final class CaptionModel: ObservableObject {
         queuedSentences = liveBuffer.jobs.count
         layoutChanged?()
     }
-    private func showTranslation(_ text: String, job: CaptionJob, complete: Bool) {
+    private func present(_ caption: ReadingCaption) {
+        english = caption.english; chinese = caption.chinese; layoutChanged?()
+    }
+    private func showTranslation(_ text: String, job: CaptionJob, complete: Bool, cleanedEnglish: String? = nil) {
         liveBuffer.translated(job, text: text, complete: complete)
         historyEntries = liveBuffer.entries
         guard !text.isEmpty, liveBuffer.mayDisplay(job) else { return }
-        displayedTranslation = job; translatedAt = Date()
-        english = job.english; chinese = text; layoutChanged?()
+        let caption = ReadingCaption(id: job.id, source: job.english, english: cleanedEnglish ?? job.english, chinese: text, complete: complete)
+        if let ready = readingBuffer.submit(caption, hold: captionHoldSeconds) { present(ready) }
     }
     private func showTranslationFailure(_ failure: TranslationFailure) {
         translationProblem = "翻译暂不可用：\(failure.message)"
-        status = "\(translationProblem!)；英文仍在跟随"
-        displayedTranslation = nil
-        english = liveBuffer.entries.last?.english ?? english
-        chinese = translationProblem!
+        status = "\(translationProblem!)；英文仍在保存"
+        if readingBuffer.current == nil {
+            english = liveBuffer.entries.last?.english ?? english; chinese = translationProblem!
+        }
         layoutChanged?()
     }
     private func beginTranslation(token: UUID) {
@@ -563,6 +580,7 @@ final class CaptionModel: ObservableObject {
                     }
                 }
             }
+            activeTranslationEngine = useLocal ? "Apple 本机翻译" : "\(provider.title) · \(refiner != nil ? refineModel : gptModel)"
             while !Task.isCancelled && generation == token && translationEpoch == epoch && running {
                 guard let job = liveBuffer.nextJob() else { try? await Task.sleep(for: .milliseconds(80)); continue }
                 queuedSentences = liveBuffer.jobs.count
@@ -592,11 +610,10 @@ final class CaptionModel: ObservableObject {
                     else { throw TranslationFailure(kind: .access, message: "翻译引擎尚未准备好") }
                     guard !Task.isCancelled, generation == token, translationEpoch == epoch, running else { return }
                     failures = 0; translationProblem = nil
-                    showTranslation(translated, job: job, complete: true)
+                    showTranslation(translated, job: job, complete: true, cleanedEnglish: refined?.english)
                     if let refined {
                         liveBuffer.refined(job, english: refined.english, chinese: refined.chinese)
                         historyEntries = liveBuffer.entries
-                        if liveBuffer.mayDisplay(job) { english = refined.english; chinese = refined.chinese; layoutChanged?() }
                     }
                     queuedSentences = liveBuffer.jobs.count
                     if let fallbackReason { status = "本机翻译接替云端 · \(fallbackReason)" }
@@ -611,7 +628,7 @@ final class CaptionModel: ObservableObject {
                     let localReady = !useLocal ? await ensureLocalTranslation(requestDownload: true) : false
                     guard !Task.isCancelled, generation == token, translationEpoch == epoch else { return }
                     if localReady {
-                        useLocal = true; fallbackReason = failure.message
+                        useLocal = true; fallbackReason = failure.message; activeTranslationEngine = "Apple 本机翻译 · 云端暂不可用"
                         liveBuffer.retry(job)
                         status = "云端暂不可用，已切换本机翻译"
                         continue
@@ -656,6 +673,7 @@ final class CaptionModel: ObservableObject {
         }
     }
     private func hideCaptions() {
+        readingTask?.cancel(); readingTask = nil; readingBuffer = CaptionReadingBuffer()
         visible = false
         layoutChanged?()
     }
@@ -868,7 +886,7 @@ struct SettingsView: View {
                 Picker("本机语音模型", selection: $model.whisperModel) {
                     ForEach(WhisperModel.allCases) { Text($0.title).tag($0) }
                 }.disabled(model.running || model.busy)
-                Text("首次开始会下载模型并进行预热；之后使用缓存。Base 适合先测试，Turbo 占用更多内存。无需安装 Wispr。")
+                Text("Mac 默认 Turbo，优先保证课堂识别质量。首次使用需要下载及预热；Base 适合低内存设备。课程术语也会提供给本机识别器。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if model.inputMode == "deepgram" {
@@ -929,7 +947,15 @@ struct SettingsView: View {
                 TextField("Course Vocabulary / Glossary：课程代码、教授姓名、专业词汇（每行一条）", text: $model.glossary, axis: .vertical)
                     .lineLimit(2...4).textFieldStyle(.roundedBorder).disabled(model.running || model.busy)
             }
+            Text("当前翻译：" + model.activeTranslationEngine).font(.caption).foregroundStyle(.secondary)
             Text(model.fallbackStatus).font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Text("每组字幕至少保留")
+                Slider(value: $model.captionHoldSeconds, in: 2...12, step: 1)
+                Text("\(Int(model.captionHoldSeconds)) 秒")
+            }
+            Text("新识别片段不会清掉已完成的中英字幕；下一组译文就绪且达到停留时间后再替换。全部内容仍保存在回看与课堂文本中。")
+                .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Button("准备 Apple 离线翻译") { model.prepareTranslation() }.disabled(model.running || model.busy || model.translationReady)
                 Button("Test Apple Translation · 测试本机翻译") { model.testLocalTranslation() }.disabled(model.running || model.busy)

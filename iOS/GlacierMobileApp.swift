@@ -62,7 +62,7 @@ typealias CaptionError = GlacierCoreError
                 try await archive.lectures.create(saved)
                 sessionID = saved.id
                 try Task.checkCancellation()
-                let capture = TranscriberFactory.make(provider: provider, model: whisperModel, key: key)
+                let capture = TranscriberFactory.make(provider: provider, model: whisperModel, key: key, vocabulary: glossary)
                 self.capture = capture
                 let stream = try await capture.start { [weak self] message in
                     guard self?.generation == token else { return }; self?.status = message

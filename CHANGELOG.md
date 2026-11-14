@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Readable live captions and transcription context (2026-11-14)
+- Stop incoming Whisper partials and fast translations from replacing a just-completed bilingual pair. Add a five-second default reading interval (2–12 seconds), a bounded revision-coalescing presentation queue and immediate cancellation on Stop.
+- Translate stable prefixes before the ASR final boundary, while preserving full raw hypotheses/finals in the lecture journal. Use cleaned English in subsequent translation context so corrected terminology does not revert to the recognition error.
+- Default Mac to WhisperKit Large v3 Turbo, retain Base for mobile/low-memory use, and condition decoding on bounded course vocabulary and previous finalized text. Show the active translation engine explicitly.
+- Synthetic Turbo speech testing found a remaining technical-word error; real GPT-4o mini cleanup corrected it and produced Chinese while preserving negation/net-movement meaning. This is not evidence of zero-error live classroom recognition.
+- The prior API key was successfully migrated to private persistent storage; the actual desktop GPT-4o mini connection test passed. Native verification passed the Mac build, shared-core tests, all seven Swift suites, 25 session assertions and 34 portable tests.
+
 ### Reliable desktop credentials and automatic Apple fallback (2026-11-14)
 - Unify Mac ASR, live translation and archive credential loading through GlacierCore. Persist user-saved or migrated keys outside the bundle in a private config file; preserve them when an ad-hoc rebuild loses Keychain access. iOS stays Keychain-only.
 - Add one-click Test Connection using the selected live caption model, persistent save after a successful test, clear status, and one-time legacy Keychain migration. No credential values are logged.

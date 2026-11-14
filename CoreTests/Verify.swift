@@ -22,12 +22,22 @@ final class RefinerMock: URLProtocol, @unchecked Sendable {
 @main enum CoreVerify {
     static func main() async throws {
         try verifyCredentialPersistence()
-        if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--whisper-audio" {
-            let pipe = try await WhisperKit(WhisperKitConfig(model: WhisperModel.base.rawValue, verbose: false, prewarm: true, load: true))
-            let result = try await pipe.transcribe(audioPath: CommandLine.arguments[2], decodeOptions: DecodingOptions(language: "en", skipSpecialTokens: true))
+        verifyReadingPace()
+        if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--whisper-audio" {
+            let model: WhisperModel = CommandLine.arguments.contains("--turbo") ? .turbo : .base
+            let start = Date()
+            let pipe = try await WhisperKit(WhisperKitConfig(model: model.rawValue, verbose: false, prewarm: true, load: true))
+            let loaded = Date()
+            let vocabulary: String
+            if let index = CommandLine.arguments.firstIndex(of: "--glossary"), index + 1 < CommandLine.arguments.count {
+                vocabulary = CourseVocabulary.normalize(try String(contentsOfFile: CommandLine.arguments[index + 1], encoding: .utf8))
+            } else { vocabulary = "" }
+            let tokens = Array((pipe.tokenizer?.encode(text: vocabulary) ?? []).prefix(48))
+            let result = try await pipe.transcribe(audioPath: CommandLine.arguments[2], decodeOptions: DecodingOptions(language: "en", temperatureFallbackCount: 1, skipSpecialTokens: true, withoutTimestamps: true, promptTokens: tokens.isEmpty ? nil : tokens, suppressBlank: true))
             let text = result.map(\.text).joined(separator: " ")
             precondition(!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            print("WhisperKit Base smoke transcript: \(text)")
+            print("WhisperKit \(model.title) smoke transcript: \(text)")
+            print("Model preparation seconds: \(loaded.timeIntervalSince(start)); decode seconds: \(Date().timeIntervalSince(loaded))")
             return
         }
         let glossary = CourseVocabulary.normalize("\nBIOG 1440\n  osmosis = 渗透  \nBIOG 1440\nOSMOSIS = 渗透\nProf. Levine\n")

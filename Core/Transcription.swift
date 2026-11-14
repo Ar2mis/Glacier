@@ -51,9 +51,9 @@ public extension StreamingTranscriber {
 }
 
 @MainActor public enum TranscriberFactory {
-    public static func make(provider: SpeechProvider, model: WhisperModel = .base, key: String = "") -> any StreamingTranscriber {
+    public static func make(provider: SpeechProvider, model: WhisperModel = .base, key: String = "", vocabulary: String = "") -> any StreamingTranscriber {
         switch provider {
-        case .whisperKit: WhisperTranscriber(model: model)
+        case .whisperKit: WhisperTranscriber(model: model, vocabulary: vocabulary)
         case .appleSpeech: AppleTranscriber()
         case .openAI: CloudTranscriber(provider: .openAI, key: key)
         case .deepgram: CloudTranscriber(provider: .deepgram, key: key)

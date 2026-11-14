@@ -212,6 +212,20 @@ actor Calls {
         check(unavailable.running && unavailable.english == "English remains visible.", "missing offline assets show an actionable caption instead of silently losing translation")
         unavailable.receive(snapshot("", active: false))
 
+        let paced = CaptionModel(simulation: true) { source, _, _, _ in "稳定译文：" + source }
+        paced.captionHoldSeconds = 2
+        paced.receive(snapshot("Please keep this pair readable.", id: 1))
+        await waitUntil("first paced pair") { paced.chinese == "稳定译文：Please keep this pair readable." }
+        paced.receive(snapshot("The next sentence is already recognized.", id: 2))
+        await waitUntil("second pair stored independently") { paced.historyEntries.last?.translatedSource == "The next sentence is already recognized." }
+        check(paced.english == "Please keep this pair readable.", "new ASR and fast translations cannot erase a readable bilingual pair")
+        await waitUntil("reading deadline advances to ready pair") { paced.english == "The next sentence is already recognized." }
+        paced.receive(snapshot("Untranslated words keep arriving", id: 3))
+        check(paced.chinese == "稳定译文：The next sentence is already recognized.", "pending English does not replace completed Chinese with a placeholder")
+        paced.receive(snapshot("", active: false))
+        await wait(0.2)
+        check(!paced.visible, "Stop cancels pending presentation updates immediately")
+
         let report: [String: Any] = ["tested_at": ISO8601DateFormatter().string(from: Date()), "microphone_used": false,
             "real_wispr_recording_started": false, "translator": "deterministic simulated service", "checks": passed, "count": passed.count]
         try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: ".build/session-report.json"))

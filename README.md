@@ -25,8 +25,10 @@ package `GlacierCore`; the system-wide overlay and Wispr integration remain Mac 
   in one request. Course Vocabulary / Glossary supplies names and academic terms.
   It preserves meaning and raw source, limits context to four pairs and glossary
   to 4,000 characters, and avoids blindly deleting meaningful words like “like.”
-  Raw partial text appears before cleanup completes. New speech providers refine
-  finalized utterances; the existing Wispr buffer still coalesces revisions.
+  Raw partial text appears before cleanup completes. Mac WhisperKit begins translating
+  stable prefixes agreed by successive hypotheses, rather than waiting for the final
+  silence boundary. Final ASR still replaces the complete stored utterance. Other
+  providers/mobile cleanup use final utterances; Wispr coalesces revisions.
 - **Wispr live captions:** observe an existing Wispr Flow Notetaker transcript through
   macOS Accessibility; segment and coalesce revisions before translation.
 - **Translation:** OpenAI Responses API, Gemini's OpenAI-compatible endpoint, or
@@ -38,7 +40,11 @@ package `GlacierCore`; the system-wide overlay and Wispr integration remain Mac 
 - **Desktop UI:** a draggable ice-cube launcher, confirmed start/stop indicators,
   a transparent click-through caption overlay, independent font/color/size/bold
   controls, adjustable shadows, and a draggable snapshot of the last 30 seconds.
-  Defaults include Times New Roman and Songti SC.
+  Defaults include Times New Roman and Songti SC. Completed bilingual pairs remain
+  visible until their successor is ready and the reading interval has elapsed
+  (default five seconds, adjustable 2–12). New ASR partials cannot erase Chinese.
+  Up to three upcoming pairs are coalesced for freshness; history retains every
+  translated result within its window, and independent lecture journals retain raw ASR.
 - **Complete lecture storage:** GlacierCore speech sessions persist every utterance
   outside the short live-caption history. Partial revisions replace the same
   utterance; finalized text is preserved. WhisperKit Stop closes microphone input,
@@ -96,9 +102,13 @@ so macOS may require reauthorizing the new build even when the old toggle is on.
 Stable signing/notarization is still future work. Apple's microphone input mode
 requires microphone permission and speech assets.
 
-For a fresh local speech session, select **WhisperKit → Base**, save your OpenAI
+For a fresh Mac session, select **WhisperKit → Large v3 Turbo** (the Mac default), save your OpenAI
 key, and enable **一次请求完成英文整理 + 中文翻译**. The model preparation message
-appears before microphone capture starts. Turbo uses Argmax's actual model name
+appears before microphone capture starts. Base remains selectable for lower memory
+or faster first download; iOS still defaults to Base. WhisperKit receives bounded
+course-vocabulary tokens and the previous final utterance as on-device decoder
+context. The utterance cap is eight seconds, with earlier silence finalization;
+stable partial translation and readable presentation proceed independently. Turbo uses Argmax's actual model name
 `openai_whisper-large-v3-v20240930_turbo`; `openai_whisper-large-v3-turbo` is not the
 Core ML repository identifier. First model loading can take much longer than
 subsequent starts. On iOS, disable cleanup for local English-only use without a key.
@@ -417,3 +427,14 @@ user is logged in; a powered-off Mac, OS privacy denial, provider outage, or fai
 native build cannot be guaranteed away. Such failures preserve the installed app
 and are recorded in the logs. The helper bootstrap is outside Documents so even
 an OS denial of repository access can be logged.
+
+### Caption quality verification
+
+The reading buffer has deterministic clock tests and native session regressions
+for fast successive translations, growing ASR partials, preserved Chinese, and
+Stop cancellation. A short synthetic biology recording was transcribed by Turbo
+on the development Mac in about 1.7–2.5 seconds after loading. It still misspelled
+"aquaporins"; a real GPT-4o mini cleanup request corrected it and preserved the
+meaning of equilibrium/net movement in Chinese in about 1.8 seconds. These are
+small clean-audio smoke tests, not a classroom word-error-rate or noisy-microphone
+benchmark. Course terminology, microphone distance, and room noise still matter.

@@ -113,6 +113,6 @@ struct LiveCaptionBuffer {
         // Only include completed pairs: .chinese non-empty and .translatedSource non-empty
         return entries[..<index].filter { !$0.chinese.isEmpty && !$0.translatedSource.isEmpty }
             .suffix(4)
-            .map { .init(english: $0.translatedSource, chinese: $0.chinese) }
+            .map { .init(english: $0.cleanedEnglish.isEmpty ? $0.translatedSource : $0.cleanedEnglish, chinese: $0.chinese) }
     }
 }

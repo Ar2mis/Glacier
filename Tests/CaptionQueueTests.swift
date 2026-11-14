@@ -132,6 +132,9 @@ struct TranslationPair { let english: String; let chinese: String }
         ctx.refined(jobG, english: "Clean seventh sentence.", chinese: "第七句。")
         precondition(ctx.entries.last?.english == "Seven.", "Cleanup must preserve the original ASR evidence")
         precondition(ctx.entries.last?.cleanedEnglish == "Clean seventh sentence.")
+        var nextContext = ctx
+        _ = nextContext.update([.init(id: 35, text: "Following sentence.")], now: t.addingTimeInterval(7.5))
+        precondition(nextContext.context(before: "35:0").last?.english == "Clean seventh sentence.", "Corrected terminology, not its ASR mistake, must condition subsequent translations")
         _ = ctx.update([.init(id: 34, text: "Seven revised.")], now: t.addingTimeInterval(7.5))
         ctx.refined(jobG, english: "Stale", chinese: "旧译文")
         precondition(ctx.entries.last?.cleanedEnglish == "", "Late cleanup must not attach to revised ASR")
