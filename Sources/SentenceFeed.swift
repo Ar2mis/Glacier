@@ -102,6 +102,7 @@ struct SentenceFeed {
     }
 
     static func sentences(_ text: String) -> [String] {
+        // First, try to use NLTokenizer for base tokens
         let tokenizer = NLTokenizer(unit: .sentence)
         tokenizer.setLanguage(.english); tokenizer.string = text
         var result = [String]()
@@ -116,6 +117,74 @@ struct SentenceFeed {
             }
             return true
         }
+        if result.count <= 1 {
+            // fallback to custom splitting if only 1 found
+            return customSentences(text)
+        }
+        // Merge tokens if the split occurs after abbreviations or decimals
+        result = mergeSentenceSplits(result)
+        return result
+    }
+    // Merge sentence splits broken by abbreviations and decimals
+    private static func mergeSentenceSplits(_ candidate: [String]) -> [String] {
+        let abbreviations: Set<String> = [
+            "e.g.", "i.e.", "Dr.", "Mr.", "Mrs.", "Ms.", "Prof.", "Ph.D.", "Inc.", "Jr.", "Sr.", "vs.", "etc.", "Fig.", "Eq.", "St.", "No.", "Co.", "Ltd.", "Jan.", "Feb.", "Mar.", "Apr.", "Jun.", "Jul.", "Aug.", "Sep.", "Oct.", "Nov.", "Dec."
+        ]
+        var merged: [String] = []
+        var i = 0
+        while i < candidate.count {
+            var current = candidate[i]
+            var skipMerge = false
+            // Only merge if not last
+            if i + 1 < candidate.count {
+                let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
+                let lastWord = trimmed.components(separatedBy: .whitespaces).last ?? ""
+                let lower = lastWord.lowercased()
+                if abbreviations.contains(lastWord) || abbreviations.contains(lower.capitalized) {
+                    // Merge with next
+                    current = current + " " + candidate[i+1]
+                    skipMerge = true
+                    i += 1
+                } else if let match = lastWord.range(of: "^([0-9]+)\\.$", options: .regularExpression), i + 1 < candidate.count {
+                    // Number followed by a period but it's not an end. Could be numbered list, keep as is.
+                } else {
+                    // Check decimal like 3.14, don't split after 3.
+                    let decCheck = trimmed.components(separatedBy: .whitespaces)
+                    if decCheck.count >= 2 {
+                        let a = decCheck[decCheck.count-2]
+                        let b = decCheck.last!
+                        if let _ = Double(a), b.first == ".", b.count > 1, (Double(a + b) != nil) {
+                            current = current + " " + candidate[i+1] // Merge
+                            skipMerge = true
+                            i += 1
+                        }
+                    }
+                }
+            }
+            merged.append(current)
+            i += 1
+        }
+        return merged
+    }
+    // Fallback for rare overly-long single-segment with periods -- will apply stricter split
+    private static func customSentences(_ text: String) -> [String] {
+        // Use regex to produce splits on .!? except when preceded by abbreviations or decimal numbers
+        let abbreviations = "(?:e\\.g\\.|i\\.e\\.|Dr\\.|Mr\\.|Mrs\\.|Ms\\.|Prof\\.|Ph\\.D\\.|Inc\\.|Jr\\.|Sr\\.|vs\\.|etc\\.|Fig\\.|Eq\\.|St\\.|No\\.|Co\\.|Ltd\\.|Jan\\.|Feb\\.|Mar\\.|Apr\\.|Jun\\.|Jul\\.|Aug\\.|Sep\\.|Oct\\.|Nov\\.|Dec\\.)"
+        let pattern = "(?<!\\b" + abbreviations + ")(?<![0-9])([.!?])[ \\n\t\r\f]+(?=[A-Z0-9\\"]|$)"
+        let regex = try! NSRegularExpression(pattern: pattern, options: [])
+        let ns = text as NSString
+        var last = 0
+        var result = [String]()
+        let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: ns.length))
+        for m in matches {
+            let r = NSRange(location: last, length: m.range.location + 1 - last)
+            let part = ns.substring(with: r).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !part.isEmpty { result.append(part) }
+            last = m.range.location + 2 // skip space
+        }
+        let rest = ns.substring(from: last).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !rest.isEmpty { result.append(rest) }
+        if result.isEmpty { return [text] }
         return result
     }
 }
