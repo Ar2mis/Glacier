@@ -97,6 +97,7 @@ final class CaptionModel: ObservableObject {
             gptModel = provider.defaultModel
             apiKeyDraft = ""
             hasAPIKey = APIKeyStore.exists(provider: provider)
+            credentialTestPassed = nil; credentialStatus = hasAPIKey ? "Saved on this Mac · not tested" : "No readable key · Apple fallback available"
         }
     }
     @Published var gptModel = UserDefaults.standard.string(forKey: "gptModel") ?? "gpt-4.1" {
@@ -108,8 +109,11 @@ final class CaptionModel: ObservableObject {
     @Published var apiKeyDraft = ""
     @Published var hasAPIKey = false
     @Published var connectionStatus = ""
+    @Published var credentialStatus = "Not tested"
+    @Published var credentialTestPassed: Bool?
+    @Published var fallbackStatus = "Checking Apple English–Chinese language pack…"
     @Published var queuedSentences = 0
-    var canStart: Bool { !busy && (translationMode == "gpt" ? hasAPIKey : translationReady) }
+    var canStart: Bool { !busy }
     var canCancelCapture: Bool { busy && startTask != nil && SpeechProvider(rawValue: inputMode) != nil }
     var layoutChanged: (() -> Void)?
     private let capture = SpeechCapture()
@@ -138,12 +142,20 @@ final class CaptionModel: ObservableObject {
     private var translationProblem: String?
     let simulation: Bool
     private let translationOverride: CaptionTranslationOperation?
-    init(simulation: Bool = false, archive: LectureArchive? = nil, coreFactory: ((SpeechProvider, WhisperModel, String) -> any StreamingTranscriber)? = nil, operation: CaptionTranslationOperation? = nil) {
+    private let localTranslationOverride: (@Sendable (String) async throws -> String)?
+    private let credentialOverride: (@Sendable () throws -> String)?
+    init(simulation: Bool = false, archive: LectureArchive? = nil, coreFactory: ((SpeechProvider, WhisperModel, String) -> any StreamingTranscriber)? = nil, localTranslation: (@Sendable (String) async throws -> String)? = nil, credential: (@Sendable () throws -> String)? = nil, operation: CaptionTranslationOperation? = nil) {
         self.simulation = simulation
         self.archive = archive ?? LectureArchive()
         self.coreFactory = coreFactory
         self.translationOverride = operation
-        if !simulation { hasAPIKey = APIKeyStore.exists(provider: provider); self.archive.recoverSavedLectures() }
+        self.localTranslationOverride = localTranslation; self.credentialOverride = credential
+        if !simulation {
+            hasAPIKey = APIKeyStore.exists(provider: provider)
+            credentialStatus = hasAPIKey ? "Saved on this Mac · not tested" : "No readable key · Apple fallback available"
+            self.archive.recoverSavedLectures()
+            Task { _ = await ensureLocalTranslation(requestDownload: false) }
+        }
     }
     @Published var historyEntries: [CaptionHistoryEntry] = []
     @Published var courseName = UserDefaults.standard.string(forKey: "courseName") ?? "" {
@@ -166,7 +178,7 @@ final class CaptionModel: ObservableObject {
             defer { busy = false }
             do {
                 try await Task.detached { try CredentialStore.save(value, provider: "deepgram") }.value
-                speechKeyDraft = ""; status = "Deepgram key 已保存到本机钥匙串"
+                speechKeyDraft = ""; status = "Deepgram key 已保存到本机配置"
             } catch { status = error.localizedDescription }
         }
     }
@@ -179,7 +191,8 @@ final class CaptionModel: ObservableObject {
             defer { busy = false }
             do {
                 try await Task.detached { try APIKeyStore.save(draft, provider: selected) }.value
-                apiKeyDraft = ""; hasAPIKey = true; status = "API key 已保存到本机钥匙串"
+                apiKeyDraft = ""; hasAPIKey = true; credentialTestPassed = nil
+                credentialStatus = "Saved on this Mac · not tested"; status = "API key 已保存；重启和自动更新后仍可读取"
             } catch { status = error.localizedDescription }
         }
     }
@@ -191,7 +204,9 @@ final class CaptionModel: ObservableObject {
             defer { busy = false }
             do {
                 _ = try await Task.detached { try APIKeyStore.read(provider: selected, allowInteraction: true) }.value
-                hasAPIKey = true; status = "密钥已解锁，可以测试 AI 翻译"
+                hasAPIKey = true; credentialTestPassed = nil
+                credentialStatus = "Migrated to persistent storage · not tested"
+                status = "密钥已迁移到本机配置；以后更新无需重新解锁"
             } catch { status = error.localizedDescription }
         }
     }
@@ -203,7 +218,8 @@ final class CaptionModel: ObservableObject {
             defer { busy = false }
             do {
                 try await Task.detached { try APIKeyStore.delete(provider: selected) }.value
-                hasAPIKey = false; apiKeyDraft = ""; status = "已移除 API key"
+                hasAPIKey = false; apiKeyDraft = ""; credentialTestPassed = nil
+                credentialStatus = "Key removed · Apple fallback available"; status = "已移除 API key"
             } catch { status = error.localizedDescription }
         }
     }
@@ -230,19 +246,50 @@ final class CaptionModel: ObservableObject {
     }
     func testGPT() {
         guard !running, !busy, !simulation else { return }
-        busy = true; status = "正在用示例句测试 AI 翻译…"
+        let selected = provider, draft = apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let model = selected == .openai && refineEnabled ? refineModel : gptModel
+        let useRefiner = selected == .openai && refineEnabled
+        busy = true; credentialTestPassed = nil; credentialStatus = "Testing…"
+        status = "正在测试实际字幕模型：\(model)…"
         startTask = Task {
             defer { busy = false; startTask = nil }
             do {
-                let selectedProvider = provider
-                let key = try await Task.detached { try APIKeyStore.read(provider: selectedProvider) }.value
-                let source = "The difference-in-differences estimator relies on the parallel trends assumption."
-                let translated = try await GPTTranslator(key: key, model: gptModel, provider: provider).stream(source, context: [], glossary: glossary) { _ in }
+                let key = try await Task.detached { try draft.isEmpty ? APIKeyStore.read(provider: selected) : draft }.value
+                let source = "The membrane is selectively permeable, not completely open."
+                let translated: String
+                if useRefiner { translated = try await TranscriptRefiner(key: key, model: model).refine(source, glossary: glossary, context: []).chinese }
+                else { translated = try await GPTTranslator(key: key, model: model, provider: selected).stream(source, context: [], glossary: glossary) { _ in } }
                 try Task.checkCancellation()
-                guard !running else { return }
+                if !draft.isEmpty { try await Task.detached { try APIKeyStore.save(draft, provider: selected) }.value }
+                hasAPIKey = true; apiKeyDraft = ""; credentialTestPassed = true
+                credentialStatus = "Connected · \(selected.title) / \(model)"
                 english = source; chinese = translated; visible = true; layoutChanged?()
-                status = "AI 翻译测试成功"
-            } catch { if !Task.isCancelled { status = error.localizedDescription } }
+                status = "AI 翻译测试成功 · 密钥已持久保存"
+            } catch {
+                if !Task.isCancelled {
+                    credentialTestPassed = false
+                    credentialStatus = "Connection failed · " + error.localizedDescription
+                    status = credentialStatus
+                }
+            }
+        }
+    }
+
+    func testLocalTranslation() {
+        guard !running, !busy, !simulation else { return }
+        busy = true
+        startTask = Task {
+            defer { busy = false; startTask = nil }
+            guard await ensureLocalTranslation(requestDownload: true), let session else {
+                status = fallbackStatus; return
+            }
+            do {
+                let source = "The membrane allows water to pass through."
+                let response = try await session.translate(source)
+                try Task.checkCancellation()
+                english = source; chinese = response.targetText; visible = true; layoutChanged?()
+                status = "Apple 本机翻译测试成功 · 无需 API key 或云端请求"
+            } catch { if !Task.isCancelled { status = "Apple 翻译暂不可用；请联网准备语言包后重试" } }
         }
     }
 
@@ -251,16 +298,37 @@ final class CaptionModel: ObservableObject {
         layoutChanged?()
     }
     func prepareTranslation() {
-        status = "正在准备中英翻译，请完成系统的语言下载提示…"
+        fallbackStatus = "请完成 Apple 中英语言包下载；安装后可离线翻译"
         if translationConfig == nil {
             translationConfig = .init(source: .init(identifier: "en"), target: .init(identifier: "zh-Hans"))
         } else { translationConfig?.invalidate() }
     }
+    private func ensureLocalTranslation(requestDownload: Bool) async -> Bool {
+        if localTranslationOverride != nil || session != nil { return true }
+        if simulation { return false }
+        let available = await LanguageAvailability().status(from: .init(identifier: "en"), to: .init(identifier: "zh-Hans"))
+        if Task.isCancelled { return false }
+        if available == .installed {
+            session = TranslationSession(installedSource: .init(identifier: "en"), target: .init(identifier: "zh-Hans"))
+            translationReady = true; fallbackStatus = "Apple fallback ready · English → 中文 · offline"
+            return true
+        }
+        fallbackStatus = available == .unsupported ? "Apple 不支持此语言对；请使用云端翻译" : "Apple 语言包未安装；联网下载一次后即可离线使用"
+        if requestDownload && available == .supported && translationConfig == nil {
+            prepareTranslation(); showSettingsRequested?()
+        }
+        return false
+    }
     func translationPrepared() {
         translationReady = true
         session = TranslationSession(installedSource: .init(identifier: "en"), target: .init(identifier: "zh-Hans"))
+        fallbackStatus = "Apple fallback ready · English → 中文 · offline"
         if translationMode == "apple" && !running { status = "本机中英翻译已就绪" }
         if running && translationProblem != nil { beginTranslation(token: generation) }
+    }
+    func translationPreparationFailed() {
+        fallbackStatus = "Apple 语言包准备失败；请联网后点「准备 Apple 离线翻译」重试"
+        if translationProblem != nil || translationMode == "apple" { status = fallbackStatus }
     }
     func quickToggle(showSettingsOnFailure: Bool = true) {
         if simulation { stop(message: "模拟已停止 · 未使用麦克风"); return }
@@ -308,7 +376,6 @@ final class CaptionModel: ObservableObject {
     func start(allowEnglishOnly: Bool = false) {
         guard !busy, !running, (!simulation || coreFactory != nil) else { return }
         if inputMode == "wispr" { watchWispr(); return }
-        if translationMode == "apple" && !translationReady { prepareTranslation(); return }
         if let provider = SpeechProvider(rawValue: inputMode) { startCore(provider); return }
         busy = true; visible = true; layoutChanged?()
         generation = UUID(); let token = generation
@@ -475,18 +542,25 @@ final class CaptionModel: ObservableObject {
             var useLocal = translationMode == "apple"
             var fallbackReason: String?
             var failures = 0
+            _ = await ensureLocalTranslation(requestDownload: useLocal)
+            guard !Task.isCancelled, translationEpoch == epoch else { return }
             if !useLocal && translationOverride == nil {
                 do {
                     let selectedProvider = provider
-                    let key = try await Task.detached { try APIKeyStore.read(provider: selectedProvider) }.value
+                    let reader = credentialOverride
+                    let key = try await Task.detached { try reader?() ?? APIKeyStore.read(provider: selectedProvider) }.value
                     guard !Task.isCancelled, translationEpoch == epoch else { return }
                     gpt = GPTTranslator(key: key, model: gptModel, provider: provider)
                     refiner = provider == .openai && refineEnabled ? TranscriptRefiner(key: key, model: refineModel) : nil
                 } catch {
                     guard !Task.isCancelled, translationEpoch == epoch else { return }
                     let failure = TranslationFailure.classify(error)
-                    if session != nil { useLocal = true; fallbackReason = failure.message }
-                    else { showTranslationFailure(failure); return }
+                    let localReady = await ensureLocalTranslation(requestDownload: true)
+                    guard !Task.isCancelled, generation == token, translationEpoch == epoch else { return }
+                    if localReady { useLocal = true; fallbackReason = failure.message }
+                    else {
+                        showTranslationFailure(.init(kind: .credentials, message: failure.message + " · " + fallbackStatus)); return
+                    }
                 }
             }
             while !Task.isCancelled && generation == token && translationEpoch == epoch && running {
@@ -503,7 +577,11 @@ final class CaptionModel: ObservableObject {
                             owner.showTranslation(text, job: job, complete: false)
                         }
                     }
-                    if useLocal, let session { translated = try await session.translate(job.english).targetText }
+                    if useLocal {
+                        if let localTranslationOverride { translated = try await localTranslationOverride(job.english) }
+                        else if let session { translated = try await session.translate(job.english).targetText }
+                        else { throw TranslationFailure(kind: .access, message: fallbackStatus) }
+                    }
                     else if let translationOverride { translated = try await translationOverride(job.english, preceding, glossary, update) }
                     else if let refiner {
                         let pair = try await refiner.refine(job.english, glossary: glossary,
@@ -530,13 +608,15 @@ final class CaptionModel: ObservableObject {
                         failure = .init(kind: service.retryable ? .network : .access, message: service.localizedDescription, retryAfter: 2)
                     } else { failure = TranslationFailure.classify(error) }
                     failures += 1
-                    if !useLocal && session != nil && (!failure.retryable || failures >= 2) {
+                    let localReady = !useLocal ? await ensureLocalTranslation(requestDownload: true) : false
+                    guard !Task.isCancelled, generation == token, translationEpoch == epoch else { return }
+                    if localReady {
                         useLocal = true; fallbackReason = failure.message
                         liveBuffer.retry(job)
                         status = "云端暂不可用，已切换本机翻译"
                         continue
                     }
-                    showTranslationFailure(failure)
+                    showTranslationFailure(.init(kind: failure.kind, message: failure.message + (useLocal ? "" : " · " + fallbackStatus), retryAfter: failure.retryAfter))
                     if !failure.retryable { return }
                     liveBuffer.retry(job)
                     let delay = max(failure.retryAfter, min(30, pow(2, Double(min(failures, 5)))))
@@ -764,7 +844,7 @@ struct SettingsView: View {
             Divider()
             Text("底部字幕完全穿透点击，不拦截下方按钮。通过设置或菜单栏回看最近 30 秒，回看窗口可拖动。关闭设置后，菜单栏的字幕图标仍可控制应用。")
                 .font(.callout).foregroundStyle(.secondary)
-            Text("WhisperKit/Apple 本机处理语音；OpenAI/Deepgram 语音来源会发送音频。AI 整理/翻译发送文字、最近四句上下文和课程术语。Wispr 单独负责其录音，自动 Word 全文归档目前只支持 Wispr。API key 存入本机钥匙串。")
+            Text("WhisperKit/Apple 本机处理语音；OpenAI/Deepgram 语音来源会发送音频。AI 整理/翻译发送文字、最近四句上下文和课程术语。Wispr 单独负责其录音，GlacierCore 和 Wispr 均支持完整 Word 归档。Mac API key 存入本机私有配置（明文、仅当前用户可读），更新 App 不会覆盖。")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding(26)
@@ -773,7 +853,7 @@ struct SettingsView: View {
         .frame(width: 580, height: min(780, (NSScreen.main?.visibleFrame.height ?? 900) - 100))
         .translationTask(model.translationConfig) { session in
             do { try await session.prepareTranslation(); model.translationPrepared() }
-            catch { model.status = "翻译准备失败：\(error.localizedDescription)。请重试。" }
+            catch { model.translationPreparationFailed() }
         }
     }
 
@@ -826,10 +906,15 @@ struct SettingsView: View {
                     if model.hasAPIKey { Button("移除") { model.removeAPIKey() } }
                 }.disabled(model.running || model.busy)
                 HStack {
-                    Button("测试 AI 翻译") { model.testGPT() }.disabled(!model.hasAPIKey || model.running || model.busy)
-                    Button("解锁已保存的密钥") { model.unlockAPIKey() }.disabled(!model.hasAPIKey || model.running || model.busy)
+                    Button("Test Connection · 测试连接") { model.testGPT() }.disabled(model.running || model.busy)
+                    Button("迁移钥匙串密钥") { model.unlockAPIKey() }.disabled(model.running || model.busy)
                     Link("获取 API key", destination: URL(string: model.provider.keyURL)!)
                 }
+                Label(model.credentialStatus, systemImage: model.credentialTestPassed == true ? "checkmark.circle.fill" : model.credentialTestPassed == false ? "exclamationmark.triangle.fill" : "key.fill")
+                    .font(.caption).foregroundStyle(model.credentialTestPassed == true ? Color.green : model.credentialTestPassed == false ? Color.orange : Color.secondary)
+                    .textSelection(.enabled)
+                Text("OpenAI：粘贴 OPENAI_API_KEY 后点 Test Connection；测试成功会自动保存。配置保存在 Application Support/Glacier/config.json，不会随 App 重建丢失。")
+                    .font(.caption).foregroundStyle(.secondary)
                 Text(model.provider.notice)
                     .font(.caption).foregroundStyle(.secondary)
                 if model.provider == .openai {
@@ -843,6 +928,11 @@ struct SettingsView: View {
                 }
                 TextField("Course Vocabulary / Glossary：课程代码、教授姓名、专业词汇（每行一条）", text: $model.glossary, axis: .vertical)
                     .lineLimit(2...4).textFieldStyle(.roundedBorder).disabled(model.running || model.busy)
+            }
+            Text(model.fallbackStatus).font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Button("准备 Apple 离线翻译") { model.prepareTranslation() }.disabled(model.running || model.busy || model.translationReady)
+                Button("Test Apple Translation · 测试本机翻译") { model.testLocalTranslation() }.disabled(model.running || model.busy)
             }
             if model.queuedSentences > 0 { Text("待更新翻译：\(model.queuedSentences) 句").font(.caption) }
             Divider()

@@ -31,6 +31,8 @@ Glacier.xcodeproj/project.xcworkspace/xcuserdata/
 *.mobileprovision
 *.keychain*
 secrets/
+config.json
+.config.lock
 
 # Personal recordings, exported notes, debug reports and automation artifacts
 output/

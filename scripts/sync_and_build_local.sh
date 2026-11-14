@@ -58,6 +58,8 @@ if [ -n "$(git status --porcelain --untracked-files=all)" ]; then log 'SKIP: che
 git -c rebase.autoStash=false pull --rebase origin main
 if [ "$MODE" = sync ]; then log 'PASS: clean main synchronized'; exit 0; fi
 [ "$(uname -s)" = Darwin ] || { log 'ERROR: app installation requires macOS'; exit 1; }
+# Never source shell startup files; the helper parses literal assignments only.
+python3 "$REPO/scripts/seed_local_credentials.py" --repo "$REPO" || log 'Credential migration deferred; existing credentials retained'
 REV=$(git rev-parse HEAD)
 INSTALLED=/Applications/Glacier.app
 if [ -f "$STATE/installed-revision" ] && [ "$(cat "$STATE/installed-revision")" = "$REV" ] && [ -d "$INSTALLED" ] &&

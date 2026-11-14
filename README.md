@@ -32,7 +32,9 @@ package `GlacierCore`; the system-wide overlay and Wispr integration remain Mac 
 - **Translation:** OpenAI Responses API, Gemini's OpenAI-compatible endpoint, or
   DeepSeek. OpenAI/DeepSeek use streamed text; Gemini uses complete responses.
   Installed Apple English–Chinese translation can serve as an explicit option or
-  a fallback after cloud credential/quota failures or repeated transient errors.
+  an automatic fallback when a key is missing or the first cloud request fails.
+  Installed language packs initialize automatically on launch; unavailable packs
+  produce a visible download/retry message instead of silently dropping Chinese.
 - **Desktop UI:** a draggable ice-cube launcher, confirmed start/stop indicators,
   a transparent click-through caption overlay, independent font/color/size/bold
   controls, adjustable shadows, and a draggable snapshot of the last 30 seconds.
@@ -102,9 +104,28 @@ Core ML repository identifier. First model loading can take much longer than
 subsequent starts. On iOS, disable cleanup for local English-only use without a key.
 
 In Glacier's settings, select the input and translation provider, save the API
-key in the app's password field, and use **Test AI Translation**. If macOS denies
-access to an existing key, use **Unlock saved key** and complete the OS prompt
-personally. This desktop key is separate from the GitHub Actions secret.
+key in the password field, and click **Test Connection · 测试连接**. It tests the
+actual selected caption model with a synthetic sentence and saves a pasted key
+only after success. The status indicator distinguishes saved, testing, connected
+and failed states. If macOS denies an old Keychain entry, **迁移钥匙串密钥** performs
+one interactive unlock and copies it to persistent storage. Complete the OS prompt
+personally, or paste your key once. This key is separate from the GitHub Actions secret.
+
+Mac speech, translation and archive services share one credential loader: private
+`~/Library/Application Support/Glacier/config.json` first, then a process environment
+variable (such as `OPENAI_API_KEY`), then Keychain. Environment/Keychain reads are
+migrated into the file. Replacing or removing a key updates all app consumers;
+removal prevents a stale environment or locked Keychain value from reappearing.
+Finder launches do not need a shell environment. The updater runs
+`python3 scripts/seed_local_credentials.py` to import a missing literal key from
+`.zshenv`, `.zprofile`, `.zshrc` or the checkout's `.env`; it never executes these
+files, overwrites a saved key, or prints the value. Run that command once manually
+only if you are setting up a separate Mac.
+
+Apple fallback translates live captions locally. Its English–Chinese language pack
+must be downloaded once while online; use **准备 Apple 离线翻译** if needed.
+Cloud speech recognition and AI lecture summaries still require network access and
+credentials; local caption fallback does not make those cloud services offline.
 
 For **Wispr mode only**, keep one Wispr Meeting Recorder window open on **Transcript**, scrolled to the
 bottom and not minimized. Click the ice cube to start/stop, or operate Wispr
@@ -153,13 +174,13 @@ Stopped Wispr recording → full transcript copy ──────────�
 
 | Component | Responsibility |
 | --- | --- |
-| `Package.swift`, `Core/` | Shared speech provider contract, bounded microphone capture, WhisperKit, Apple/cloud adapters, one-pass refiner and Keychain utilities |
+| `Package.swift`, `Core/` | Shared speech provider contract, bounded microphone capture, WhisperKit, Apple/cloud adapters, one-pass refiner and shared credential persistence |
 | `iOS/GlacierMobileApp.swift`, `Glacier.xcodeproj` | Foreground iOS captions, vocabulary/provider settings, cancellation and bounded cleanup queue |
 | `Sources/App.swift` | Main-actor observable state, session lifecycle, translation tasks and AppKit panels |
 | `Sources/WisprCapture.swift` | Accessibility reader actor, recording controls and transcript polling |
 | `Sources/SpeechCapture.swift` | AVAudioEngine capture, PCM conversion and Apple SpeechAnalyzer input |
 | `Sources/SentenceFeed.swift`, `Sources/CaptionHistory.swift` | Sentence boundaries, revision coalescing, debounce, translation jobs and recent history |
-| `Sources/GPTTranslator.swift` | Provider requests, SSE decoding, typed failures and per-provider Keychain storage |
+| `Sources/GPTTranslator.swift` | Provider requests, SSE decoding, typed failures and the shared credential adapter |
 | `Sources/IceLauncher.swift`, `Sources/GlacierTheme.swift` | Floating launcher and light-blue UI styling |
 | `Sources/LectureArchive.swift`, `Sources/WordExporter.swift` | Durable archive jobs, coverage validation, AI digest and DOCX generation |
 | `Sources/Simulation.swift`, `Tests/` | Synthetic app scenarios and standalone executable verification suites |
@@ -181,7 +202,11 @@ needed on iOS.
 
 ## Privacy and limitations
 
-- Runtime API keys are stored in macOS Keychain. Never commit keys, `.env` files,
+- On Mac, API keys are stored in the app-owned `config.json` (0700 parent directory,
+  0600 file) and mirrored to Keychain when available. The config is **plaintext**,
+  readable by processes running as your user; it is not encrypted. It lives outside
+  the app bundle and repository so ad-hoc rebuilds cannot invalidate it. iOS retains
+  Keychain-only credential storage. Never commit keys, `.env` files,
   personal recordings, transcripts, exports or debug logs. `.gitignore` excludes
   these common locations and formats; it is not a substitute for reviewing diffs.
 - Live translation sends the current sentence, up to four recent bilingual context

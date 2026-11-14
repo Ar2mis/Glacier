@@ -1,6 +1,5 @@
 import Foundation
-import Security
-import LocalAuthentication
+import GlacierCore
 
 enum AIProvider: String, Codable, CaseIterable, Identifiable {
     case openai, gemini, deepseek
@@ -17,78 +16,14 @@ enum AIProvider: String, Codable, CaseIterable, Identifiable {
 }
 
 enum APIKeyStore {
-    private static let lock = NSRecursiveLock()
-    private static var cached: [AIProvider: String] = [:]
-    private static func service(_ provider: AIProvider) -> String { "local.ar2mis.lecturecaptions.\(provider.rawValue)" }
-    private static func query(_ provider: AIProvider) -> [String: Any] { [kSecClass as String: kSecClassGenericPassword,
-                                               kSecAttrService as String: service(provider), kSecAttrAccount as String: "api-key"] }
-    static func load(provider: AIProvider = .openai) -> String? {
-        try? read(provider: provider)
-    }
+    static func load(provider: AIProvider = .openai) -> String? { try? read(provider: provider) }
     static func read(provider: AIProvider = .openai, allowInteraction: Bool = false) throws -> String {
-        lock.lock(); defer { lock.unlock() }
-        if let key = cached[provider] { return key }
-        // LAContext does not suppress dialogs for macOS file-based keychains.
-        // Ask the legacy implementation to fail closed rather than show UI.
-        #if os(macOS)
-        var wasAllowed = DarwinBoolean(false)
-        if !allowInteraction {
-            guard SecKeychainGetUserInteractionAllowed(&wasAllowed) == errSecSuccess,
-                  SecKeychainSetUserInteractionAllowed(false) == errSecSuccess else {
-                throw TranslationFailure(kind: .credentials, message: "无法安全读取本机密钥；英文字幕仍可使用")
-            }
-        }
-        defer { if !allowInteraction { SecKeychainSetUserInteractionAllowed(wasAllowed.boolValue) } }
-        #endif
-        var request = query(provider)
-        request[kSecReturnData as String] = true
-        request[kSecMatchLimit as String] = kSecMatchLimitOne
-        // Background recording must never block the main thread behind a
-        // Keychain authentication dialog after an application update.
-        let context = LAContext()
-        context.interactionNotAllowed = !allowInteraction
-        request[kSecUseAuthenticationContext as String] = context
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(request as CFDictionary, &result)
-        guard status == errSecSuccess, let data = result as? Data,
-              let key = String(data: data, encoding: .utf8), !key.isEmpty else {
-            throw TranslationFailure(kind: .credentials, message: status == errSecItemNotFound
-                ? "尚未保存 \(provider.title) API key"
-                : "系统暂不允许读取 \(provider.title) 密钥（\(status)）；可在设置中点「解锁已保存的密钥」")
-        }
-        cached[provider] = key
-        return key
+        do { return try CredentialStore.read(provider.rawValue, allowInteraction: allowInteraction) }
+        catch { throw TranslationFailure(kind: .credentials, message: error.localizedDescription) }
     }
-    static func exists(provider: AIProvider = .openai) -> Bool {
-        var request = query(provider)
-        request[kSecMatchLimit as String] = kSecMatchLimitOne
-        let context = LAContext()
-        context.interactionNotAllowed = true
-        request[kSecUseAuthenticationContext as String] = context
-        let status = SecItemCopyMatching(request as CFDictionary, nil)
-        return status == errSecSuccess || status == errSecInteractionNotAllowed
-    }
-    static func save(_ value: String, provider: AIProvider = .openai) throws {
-        lock.lock(); defer { lock.unlock() }
-        let key = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty else { throw CaptionError.message("请先输入 所选服务的 API key。") }
-        let values = [kSecValueData as String: Data(key.utf8)]
-        var status = SecItemUpdate(query(provider) as CFDictionary, values as CFDictionary)
-        if status == errSecItemNotFound {
-            var item = query(provider)
-            item[kSecValueData as String] = Data(key.utf8)
-            item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-            status = SecItemAdd(item as CFDictionary, nil)
-        }
-        guard status == errSecSuccess else { throw CaptionError.message("无法保存到钥匙串（\(status)）。") }
-        cached[provider] = key
-    }
-    static func delete(provider: AIProvider = .openai) throws {
-        lock.lock(); defer { lock.unlock() }
-        let status = SecItemDelete(query(provider) as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else { throw CaptionError.message("无法移除密钥（\(status)）") }
-        cached[provider] = nil
-    }
+    static func exists(provider: AIProvider = .openai) -> Bool { load(provider: provider) != nil }
+    static func save(_ value: String, provider: AIProvider = .openai) throws { try CredentialStore.save(value, provider: provider.rawValue) }
+    static func delete(provider: AIProvider = .openai) throws { try CredentialStore.delete(provider.rawValue) }
 }
 
 struct TranslationPair: Sendable {

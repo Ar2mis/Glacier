@@ -21,6 +21,7 @@ final class RefinerMock: URLProtocol, @unchecked Sendable {
 
 @main enum CoreVerify {
     static func main() async throws {
+        try verifyCredentialPersistence()
         if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--whisper-audio" {
             let pipe = try await WhisperKit(WhisperKitConfig(model: WhisperModel.base.rawValue, verbose: false, prewarm: true, load: true))
             let result = try await pipe.transcribe(audioPath: CommandLine.arguments[2], decodeOptions: DecodingOptions(language: "en", skipSpecialTokens: true))

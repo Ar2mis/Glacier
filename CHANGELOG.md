@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Reliable desktop credentials and automatic Apple fallback (2026-11-14)
+- Unify Mac ASR, live translation and archive credential loading through GlacierCore. Persist user-saved or migrated keys outside the bundle in a private config file; preserve them when an ad-hoc rebuild loses Keychain access. iOS stays Keychain-only.
+- Add one-click Test Connection using the selected live caption model, persistent save after a successful test, clear status, and one-time legacy Keychain migration. No credential values are logged.
+- Seed missing OpenAI credentials from literal environment/shell/.env assignments during local updates, without executing shell files or replacing saved/deleted keys. Malformed config files remain intact.
+- Initialize installed Apple English–Chinese translation automatically and retry the same caption locally on the first cloud failure. Missing language packs show actionable download instructions; English capture continues.
+- Native verification found DI-04's invalid Swift regex literal. Replace the unsafe custom regex with bounded NaturalLanguage token merging; keep and pass every existing academic abbreviation/decimal regression.
+- Verified native Mac build, shared-core checks, all seven Swift suites, 22 session assertions, 34 portable automation/migration tests, accelerated soak and Word export. A real Apple translation probe and caption fallback succeeded using installed language packs; live OpenAI verification still requires an accessible user credential.
+
 ### Complete WhisperKit lectures and unattended local updates (2026-11-13)
 - CORE-06: persist every GlacierCore ASR utterance in a private on-device journal, replacing partial revisions without duplicating text and retaining raw English after export.
 - WhisperKit Stop drains queued PCM and the resampler tail, decodes residual speech, waits for persistence, and queues the existing complete-transcript archive. Captions hide immediately; repeat Stop/restart cannot interrupt finalization.

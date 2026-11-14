@@ -182,6 +182,36 @@ actor Calls {
         check(savedEnglish == "The first lecture paragraph.\n\nThe second lecture paragraph.\n\nThe last finalized sentence.", "Word archive receives all paragraphs and the finalized tail, never the stale partial")
         let stored = try await lectures.session(id)
         check(stored.exportedURL == archive.lastURL && stored.warning == nil, "successful independent export is durably marked for idempotent recovery")
+        let noKey = CaptionModel(simulation: true, localTranslation: { "本机：" + $0 }, credential: {
+            throw TranslationFailure(kind: .credentials, message: "No API key")
+        })
+        noKey.translationMode = "gpt"
+        noKey.receive(snapshot("No key still has bilingual subtitles."))
+        await waitUntil("missing key uses Apple adapter") { noKey.historyEntries.first?.translatedSource == "No key still has bilingual subtitles." }
+        check(noKey.chinese == "本机：No key still has bilingual subtitles.", "missing key automatically uses local translation without manual preparation")
+        noKey.receive(snapshot("", active: false))
+
+        let offlineCalls = Calls()
+        let offline = CaptionModel(simulation: true, localTranslation: { "离线：" + $0 }, operation: { source, _, _, _ in
+            _ = await offlineCalls.record(source)
+            throw URLError(.notConnectedToInternet)
+        })
+        offline.translationMode = "gpt"
+        offline.receive(snapshot("Network loss keeps the same sentence."))
+        await waitUntil("offline fallback completes") { offline.historyEntries.first?.translatedSource == "Network loss keeps the same sentence." }
+        let requests = await offlineCalls.count()
+        check(requests == 1 && offline.chinese == "离线：Network loss keeps the same sentence.", "first network failure immediately retries the same caption locally")
+        offline.receive(snapshot("", active: false))
+
+        let unavailable = CaptionModel(simulation: true, credential: {
+            throw TranslationFailure(kind: .credentials, message: "No API key")
+        })
+        unavailable.translationMode = "gpt"; unavailable.fallbackStatus = "Apple language pack missing: download in Settings"
+        unavailable.receive(snapshot("English remains visible."))
+        await waitUntil("missing language pack is visible") { unavailable.chinese.contains("download in Settings") }
+        check(unavailable.running && unavailable.english == "English remains visible.", "missing offline assets show an actionable caption instead of silently losing translation")
+        unavailable.receive(snapshot("", active: false))
+
         let report: [String: Any] = ["tested_at": ISO8601DateFormatter().string(from: Date()), "microphone_used": false,
             "real_wispr_recording_started": false, "translator": "deterministic simulated service", "checks": passed, "count": passed.count]
         try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: ".build/session-report.json"))
