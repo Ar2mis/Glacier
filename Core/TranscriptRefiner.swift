@@ -82,24 +82,51 @@ public struct TranscriptRefiner: Sendable {
         }
         return caption
     }
-    public func refine(_ text: String, glossary: String, context: [BilingualCaption] = []) async throws -> BilingualCaption {
+    public func refine(_ text: String, glossary: String, context: [BilingualCaption] = [],
+                       update: (@Sendable (BilingualCaption) async -> Void)? = nil) async throws -> BilingualCaption {
         guard !key.isEmpty else { throw GlacierCoreError.message("Save an OpenAI API key to enable bilingual cleanup.") }
         var request = URLRequest(url: URL(string: "https://api.openai.com/v1/responses")!)
         request.httpMethod = "POST"; request.timeoutInterval = 8
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: Self.requestBody(text: text, glossary: glossary, context: context, model: model))
+        var body = try Self.requestBody(text: text, glossary: glossary, context: context, model: model)
+        if update != nil { body["stream"] = true }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let configuredRequest = request
         return try await withThrowingTaskGroup(of: BilingualCaption.self) { group in
             group.addTask { [session] in
                 let (bytes, response) = try await session.bytes(for: configuredRequest)
+                let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+                if let update, (200..<300).contains(code) {
+                    var stream = RefinementStream(source: text), previous: BilingualCaption?, total = 0
+                    var line = Data()
+                    for try await byte in bytes {
+                        try Task.checkCancellation()
+                        total += 1
+                        guard total <= 524288 else { throw GlacierCoreError.message("Cleanup stream exceeded the size limit.") }
+                        if byte == 10 {
+                            if line.last == 13 { line.removeLast() }
+                            if let pair = try stream.line(String(decoding: line, as: UTF8.self)), pair != previous {
+                                previous = pair; await update(pair)
+                            }
+                            if stream.isComplete { return try stream.result() }
+                            line.removeAll(keepingCapacity: true)
+                        } else {
+                            line.append(byte)
+                            guard line.count <= 65536 else { throw GlacierCoreError.message("Cleanup line exceeded the size limit.") }
+                        }
+                    }
+                    if !line.isEmpty { _ = try stream.line(String(decoding: line, as: UTF8.self)) }
+                    if let pair = try stream.flush(), pair != previous { await update(pair) }
+                    return try stream.result()
+                }
                 var data = Data()
                 for try await byte in bytes {
                     try Task.checkCancellation()
                     guard data.count < 65536 else { throw GlacierCoreError.message("Cleanup response exceeded the size limit.") }
                     data.append(byte)
                 }
-                return try Self.parse(data, status: (response as? HTTPURLResponse)?.statusCode ?? 0)
+                return try Self.parse(data, status: code)
             }
             group.addTask {
                 try await Task.sleep(for: .seconds(8))

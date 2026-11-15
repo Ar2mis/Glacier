@@ -21,12 +21,16 @@ final class RefinerMock: URLProtocol, @unchecked Sendable {
 
 @main enum CoreVerify {
     static func main() async throws {
+        setbuf(stdout, nil)
         try verifyCredentialPersistence()
         verifyReadingPace()
+        try verifyWhisperStorage()
+        try verifyRefinementStream()
+        try await verifyWhisperCoalescing()
         if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--whisper-audio" {
             let model: WhisperModel = CommandLine.arguments.contains("--turbo") ? .turbo : .base
             let start = Date()
-            let pipe = try await WhisperKit(WhisperKitConfig(model: model.rawValue, verbose: false, prewarm: true, load: true))
+            let pipe = try await WhisperKit(WhisperModelStorage.configuration(model))
             let loaded = Date()
             let vocabulary: String
             if let index = CommandLine.arguments.firstIndex(of: "--glossary"), index + 1 < CommandLine.arguments.count {
@@ -111,7 +115,7 @@ final class RefinerMock: URLProtocol, @unchecked Sendable {
             try await Task.sleep(for: .milliseconds(20))
             return "decoded \(samples.count)"
         }, emit: { events.append($0) })
-        precondition(events == [.init(id: 0, text: "decoded 24000", isFinal: false), .init(id: 0, text: "decoded 25600", isFinal: true)], "Stop must drain queued audio and replace the partial with exactly one final")
+        precondition(events.filter(\.isFinal) == [.init(id: 0, text: "decoded 25600", isFinal: true)], "Stop must drain all queued audio and produce exactly one final; superseded partials may coalesce")
         let (silent, silenceInput) = AsyncThrowingStream<[Float], Error>.makeStream()
         silenceInput.yield(Array(repeating: 0, count: 2000)); silenceInput.finish()
         try await WhisperStreamProcessor.run(audio: silent, decode: { _ in preconditionFailure("Silence should not decode") }, emit: { _ in preconditionFailure("Silence should not emit") })

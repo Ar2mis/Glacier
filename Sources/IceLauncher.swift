@@ -10,6 +10,7 @@ final class IceLauncher {
     private var screenObserver: NSObjectProtocol?
     private var notice: NSPanel?
     private var dismissNotice: Task<Void, Never>?
+    private var preparingNotice = false
     init(model: CaptionModel) {
         self.model = model
         panel = SubtitlePanel(contentRect: NSRect(x: 0, y: 0, width: 56, height: 56),
@@ -34,13 +35,16 @@ final class IceLauncher {
     }
     func showStartedNotice() { showNotice("已开启录音") }
     func showStoppedNotice() { showNotice("已停止录音") }
-    private func showNotice(_ text: String) {
+    func showErrorNotice(_ text: String) { showNotice(text, seconds: 8) }
+    private func showNotice(_ text: String, seconds: Double? = 2) {
         dismissNotice?.cancel()
         notice?.orderOut(nil)
+        preparingNotice = seconds == nil
         let frame = panel.screen?.visibleFrame ?? NSScreen.main!.visibleFrame
-        let width: CGFloat = 100
+        let width: CGFloat = seconds == 8 ? 280 : seconds == nil ? 180 : 100
+        let height: CGFloat = seconds == 8 ? 42 : 20
         let x = min(frame.maxX - width - 2, max(frame.minX + 2, panel.frame.midX - width / 2))
-        let tip = SubtitlePanel(contentRect: NSRect(x: x, y: max(frame.minY, panel.frame.minY - 23), width: width, height: 20),
+        let tip = SubtitlePanel(contentRect: NSRect(x: x, y: max(frame.minY, panel.frame.minY - height - 3), width: width, height: height),
                                 styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         tip.title = "Glacier · 录音提示"
         tip.level = .statusBar; tip.collectionBehavior = panel.collectionBehavior
@@ -49,11 +53,13 @@ final class IceLauncher {
         let label = NSTextField(labelWithString: text)
         label.font = .systemFont(ofSize: 12); label.textColor = .black
         label.alignment = .center; label.backgroundColor = .clear; label.drawsBackground = false
-        label.frame = NSRect(x: 0, y: 1, width: width, height: 18)
+        label.maximumNumberOfLines = 2; label.lineBreakMode = .byWordWrapping
+        label.frame = NSRect(x: 0, y: 1, width: width, height: height - 2)
         tip.contentView = label
         notice = tip; tip.orderFrontRegardless()
+        guard let seconds else { return }
         dismissNotice = Task { [weak self] in
-            do { try await Task.sleep(for: .seconds(2)) } catch { return }
+            do { try await Task.sleep(for: .seconds(seconds)) } catch { return }
             self?.notice?.orderOut(nil); self?.notice = nil
         }
     }
@@ -67,7 +73,11 @@ final class IceLauncher {
     }
     private func refresh() {
         ice.needsDisplay = true
-        ice.toolTip = model.quickBusy ? "正在联动 Wispr…" : model.finishingRecording ? "正在获取完整转录…" :
+        if model.preparingCapture && !preparingNotice { showNotice("正在准备收音 · 自动开始…", seconds: nil) }
+        else if !model.preparingCapture && preparingNotice {
+            notice?.orderOut(nil); notice = nil; preparingNotice = false
+        }
+        ice.toolTip = model.preparingCapture ? "正在准备收音，就绪后自动开始；点击取消\n\(model.status)" : model.quickBusy ? "正在联动 Wispr…" : model.finishingRecording ? "正在获取完整转录…" :
             "点击冰块开始／停止录音 · 右键查看30秒文本 · 可拖动\n\(model.status)"
         ice.setAccessibilityLabel(ice.toolTip)
         if model.quickVisible { panel.orderFrontRegardless() } else { panel.orderOut(nil) }
@@ -83,6 +93,7 @@ final class IceButtonView: NSView {
     private var hovered = false { didSet { if hovered != oldValue { needsDisplay = true } } }
     private var hoverTracking: NSTrackingArea?
     override var isOpaque: Bool { false }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let hoverTracking { removeTrackingArea(hoverTracking) }
@@ -111,7 +122,7 @@ final class IceButtonView: NSView {
         let emoji = NSAttributedString(string: "🧊", attributes: [.font: NSFont(name: "Apple Color Emoji", size: 35)!])
         let size = emoji.size()
         emoji.draw(at: NSPoint(x: (56 - size.width) / 2, y: (56 - size.height) / 2 + 1))
-        if model?.quickBusy == true || model?.finishingRecording == true {
+        if model?.preparingCapture == true || model?.quickBusy == true || model?.finishingRecording == true {
             ("···" as NSString).draw(at: NSPoint(x: 20, y: 0), withAttributes: [.font: NSFont.boldSystemFont(ofSize: 13), .foregroundColor: NSColor.darkGray])
         } else if model?.wisprRecording == true || (model?.inputMode != "wispr" && model?.running == true) {
             NSColor.systemRed.setFill(); NSBezierPath(ovalIn: NSRect(x: 41, y: 5, width: 9, height: 9)).fill()
@@ -125,7 +136,7 @@ final class IceButtonView: NSView {
         window?.setFrameOrigin(NSPoint(x: origin.x + point.x - down.x, y: origin.y + point.y - down.y))
     }
     override func mouseUp(with event: NSEvent) {
-        if dragged { snap() } else { model?.quickToggle(showSettingsOnFailure: false) }
+        if dragged { snap() } else if event.clickCount <= 1 { model?.quickToggle(showSettingsOnFailure: false) }
     }
     private func snap() {
         guard let window, let frame = (NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main)?.visibleFrame else { return }
@@ -140,8 +151,7 @@ final class IceButtonView: NSView {
         guard let model else { return }
         let menu = NSMenu()
         menu.autoenablesItems = false
-        let recording = model.wisprRecording || (model.inputMode != "wispr" && model.running)
-        let record = NSMenuItem(title: recording ? "停止录音" : "开始录音", action: #selector(toggleRecording), keyEquivalent: "")
+        let record = NSMenuItem(title: model.quickActionTitle, action: #selector(toggleRecording), keyEquivalent: "")
         record.target = self
         record.isEnabled = !model.quickBusy && (!model.busy || model.canCancelCapture) && !model.finishingRecording
         record.toolTip = model.status

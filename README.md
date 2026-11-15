@@ -14,7 +14,7 @@ package `GlacierCore`; the system-wide overlay and Wispr integration remain Mac 
   Choose multilingual Base or Large v3 Turbo. Models download/cache on first use;
   microphone audio is then decoded on device, without Wispr. Existing Mac input
   preferences are preserved. Bounded 16 kHz audio windows publish partial English
-  after about 1.5 seconds of new audio and finalize on silence or a six-second
+  after about 0.75 seconds of new audio and finalize on silence or an eight-second
   boundary. These are scheduling thresholds, not measured latency guarantees.
 - **Selectable alternatives:** on-device Apple `SFSpeechRecognizer`, OpenAI audio
   uploads in up-to-three-second chunks, or Deepgram WebSocket streaming. The Mac
@@ -41,9 +41,9 @@ package `GlacierCore`; the system-wide overlay and Wispr integration remain Mac 
   a transparent click-through caption overlay, independent font/color/size/bold
   controls, adjustable shadows, and a draggable snapshot of the last 30 seconds.
   Defaults include Times New Roman and Songti SC. Completed bilingual pairs remain
-  visible until their successor is ready and the reading interval has elapsed
-  (default five seconds, adjustable 2–12). New ASR partials cannot erase Chinese.
-  Up to three upcoming pairs are coalesced for freshness; history retains every
+  visible until useful successor text is ready. Live follow is the default; optional
+  reading priority adds a five-second interval (adjustable 2–12) and a bounded
+  three-pair queue. New ASR partials cannot erase Chinese; history retains every
   translated result within its window, and independent lecture journals retain raw ASR.
 - **Complete lecture storage:** GlacierCore speech sessions persist every utterance
   outside the short live-caption history. Partial revisions replace the same
@@ -103,15 +103,16 @@ Stable signing/notarization is still future work. Apple's microphone input mode
 requires microphone permission and speech assets.
 
 For a fresh Mac session, select **WhisperKit → Large v3 Turbo** (the Mac default), save your OpenAI
-key, and enable **一次请求完成英文整理 + 中文翻译**. The model preparation message
-appears before microphone capture starts. Base remains selectable for lower memory
+key, and enable **一次请求完成英文整理 + 中文翻译**. Microphone startup is acknowledged below the ice; the ice accepts the first click even while another app is active. A red recording dot and two-second confirmation appear only after the microphone starts. Cold model preparation runs alongside audio ingestion, so a click does not wait for model compilation before opening the microphone. A second click cancels microphone preparation or stops capture; startup failures appear beside the ice. Base remains selectable for lower memory
 or faster first download; iOS still defaults to Base. WhisperKit receives bounded
 course-vocabulary tokens and the previous final utterance as on-device decoder
 context. The utterance cap is eight seconds, with earlier silence finalization;
 stable partial translation and readable presentation proceed independently. Turbo uses Argmax's actual model name
 `openai_whisper-large-v3-v20240930_turbo`; `openai_whisper-large-v3-turbo` is not the
 Core ML repository identifier. First model loading can take much longer than
-subsequent starts. On iOS, disable cleanup for local English-only use without a key.
+subsequent starts. Downloaded models prewarm without microphone access when the Mac app opens. Hardware compute defaults remain unchanged; first-use Core ML compilation can still take minutes. Complete local model folders bypass the remote model-list request; new downloads use Application Support/Glacier/Models, with legacy Documents/huggingface caches still supported. The Mac retains its prepared Whisper adapter between sessions with unchanged model/glossary. On iOS, disable cleanup for local English-only use without a key.
+
+Live follow is now the default: stable prefixes can translate after two agreeing ASR hypotheses, GPT cleanup streams bilingual JSON fields as they arrive, and ready pairs do not wait in the reading queue. The previous pair remains until useful new Chinese arrives, and no pair expires into a blank. Enable **阅读优先** to restore the adjustable 2–12-second dwell; this intentionally trades latency for reading time. Raw final utterances still go to the full lecture journal. Inference consumes the latest pending partial (approximately 0.75-second audio cadence) while separately retaining final audio windows; slow inference cannot build a queue of superseded prefixes. At most 64 pending final windows plus one latest partial are buffered (about 33 MB of 16 kHz Float PCM at full eight-second windows). Overload is bounded and reported rather than silently discarding final audio. This volatile startup buffer does not survive crashes; finalized transcripts are durably journaled.
 
 In Glacier's settings, select the input and translation provider, save the API
 key in the password field, and click **Test Connection · 测试连接**. It tests the

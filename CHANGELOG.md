@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Responsive ice startup and live streaming (2026-11-15)
+- Reproduce the desktop startup stall in Core ML encoder specialization. Start microphone ingestion independently of model readiness, prewarm downloaded models on Mac launch without opening the microphone, use complete-cache lookup without remote enumeration, and retain the prepared Mac Whisper adapter. Hardware compute defaults and model choices are unchanged.
+- Accept the first inactive-window ice click, ignore the second click of a double-click, show persistent preparation/cancel state, and report startup failures beside the ice. Announce recording only after microphone startup succeeds.
+- Ingest audio while decoding and coalesce superseded partials at a 0.75-second audio cadence. Preserve ordered final windows and the Stop tail with a bounded, explicit overload failure.
+- Stream validated bilingual fields from Responses SSE, while requiring a successful completion before treating translation as final. Handle split escaped/Unicode JSON, refusal, failed/incomplete streams and size bounds.
+- Default Mac captions to live follow without the forced five-second presentation queue. Keep the previous bilingual pair until the next useful translation arrives; reading-priority dwell remains selectable.
+- Verified native build, shared Core checks, all seven Swift suites (32 session assertions), 34 portable tests and schedule guard. A synthetic real GPT-4o mini request produced its first bilingual update in about 1.1 seconds and completed in about 2.2 seconds; this excludes ASR and is not a classroom latency guarantee.
+
 ### Readable live captions and transcription context (2026-11-14)
 - Stop incoming Whisper partials and fast translations from replacing a just-completed bilingual pair. Add a five-second default reading interval (2–12 seconds), a bounded revision-coalescing presentation queue and immediate cancellation on Stop.
 - Translate stable prefixes before the ASR final boundary, while preserving full raw hypotheses/finals in the lecture journal. Use cleaned English in subsequent translation context so corrected terminology does not revert to the recognition error.

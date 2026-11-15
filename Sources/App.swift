@@ -15,6 +15,7 @@ final class CaptionModel: ObservableObject {
     @Published var status = "准备好后，点击开始听课"
     @Published var running = false
     @Published var busy = false
+    @Published private(set) var preparingCapture = false
     @Published var quickBusy = false
     @Published var wisprRecording = false
     private var finishTimeout: Task<Void, Never>?
@@ -114,14 +115,19 @@ final class CaptionModel: ObservableObject {
     @Published var captionHoldSeconds = (UserDefaults.standard.object(forKey: "captionHoldSeconds") as? Double) ?? 5 {
         didSet { UserDefaults.standard.set(captionHoldSeconds, forKey: "captionHoldSeconds") }
     }
+    @Published var readingPriority = UserDefaults.standard.bool(forKey: "readingPriority") {
+        didSet { UserDefaults.standard.set(readingPriority, forKey: "readingPriority") }
+    }
     @Published var activeTranslationEngine = "等待翻译"
     @Published var fallbackStatus = "Checking Apple English–Chinese language pack…"
     @Published var queuedSentences = 0
     var canStart: Bool { !busy }
-    var canCancelCapture: Bool { busy && startTask != nil && SpeechProvider(rawValue: inputMode) != nil }
+    var canCancelCapture: Bool { preparingCapture && startTask != nil }
+    var quickActionTitle: String { canCancelCapture ? "取消准备" : (wisprRecording || running ? "停止录音" : "开始录音") }
     var layoutChanged: (() -> Void)?
     private let capture = SpeechCapture()
     private var coreCapture: (any StreamingTranscriber)?
+    private var cachedWhisper: (model: WhisperModel, glossary: String, capture: WhisperTranscriber)?
     private var coreTask: Task<Void, Never>?
     private var coreFinishTask: Task<Void, Never>?
     private var coreSessionID: UUID?
@@ -160,6 +166,12 @@ final class CaptionModel: ObservableObject {
             credentialStatus = hasAPIKey ? "Saved on this Mac · not tested" : "No readable key · Apple fallback available"
             self.archive.recoverSavedLectures()
             Task { _ = await ensureLocalTranslation(requestDownload: false) }
+            if inputMode == "whisperkit",
+               WhisperModelStorage.cachedFolder(whisperModel, root: WhisperModelStorage.root) != nil ||
+               WhisperModelStorage.cachedFolder(whisperModel, root: WhisperModelStorage.legacyRoot) != nil {
+                let capture = whisperAdapter()
+                Task { try? await capture.prepare() }
+            }
         }
     }
     @Published var historyEntries: [CaptionHistoryEntry] = []
@@ -173,6 +185,7 @@ final class CaptionModel: ObservableObject {
     var openHistory: (() -> Void)?
     var recordingStarted: (() -> Void)?
     var recordingStopped: (() -> Void)?
+    var captureNotice: ((String) -> Void)?
     private var archiveCaptureTask: Task<Void, Never>?
 
     func saveSpeechKey() {
@@ -338,8 +351,8 @@ final class CaptionModel: ObservableObject {
         if translationProblem != nil || translationMode == "apple" { status = fallbackStatus }
     }
     func quickToggle(showSettingsOnFailure: Bool = true) {
-        if simulation { stop(message: "模拟已停止 · 未使用麦克风"); return }
-        guard !quickBusy, (!busy || canCancelCapture), !finishingRecording, !simulation else { return }
+        if simulation && coreFactory == nil { stop(message: "模拟已停止 · 未使用麦克风"); return }
+        guard !quickBusy, (!busy || canCancelCapture), !finishingRecording else { return }
         if inputMode != "wispr" {
             if running || canCancelCapture { stop() } else { start() }
             return
@@ -406,9 +419,16 @@ final class CaptionModel: ObservableObject {
             }
         }
     }
+    private func whisperAdapter() -> WhisperTranscriber {
+        if cachedWhisper?.model != whisperModel || cachedWhisper?.glossary != glossary {
+            cachedWhisper = (whisperModel, glossary, WhisperTranscriber(model: whisperModel, vocabulary: glossary))
+        }
+        return cachedWhisper!.capture
+    }
     private func startCore(_ provider: SpeechProvider) {
         wisprCapture.stop(); wisprObserving = false
-        busy = true; visible = true; layoutChanged?()
+        busy = true; preparingCapture = true; visible = true; layoutChanged?()
+        status = "正在准备收音 · 就绪后自动开始"
         generation = UUID(); let token = generation
         resetCaptionSession(); coreFailure = nil
         startTask = Task {
@@ -425,14 +445,17 @@ final class CaptionModel: ObservableObject {
                 try await archive.lectures.create(saved)
                 coreSessionID = saved.id
                 try Task.checkCancellation()
-                let capture = coreFactory?(provider, whisperModel, key) ?? TranscriberFactory.make(provider: provider, model: whisperModel, key: key, vocabulary: glossary)
+                let capture: any StreamingTranscriber
+                if let coreFactory { capture = coreFactory(provider, whisperModel, key) }
+                else if provider == .whisperKit { capture = whisperAdapter() }
+                else { capture = TranscriberFactory.make(provider: provider, model: whisperModel, key: key, vocabulary: glossary) }
                 coreCapture = capture
                 let events = try await capture.start { [weak self] text in
-                    guard self?.generation == token else { return }; self?.status = text
+                    guard self?.generation == token, self?.drainingCore != true else { return }; self?.status = text
                 }
                 try Task.checkCancellation()
                 guard generation == token else { capture.stop(); return }
-                busy = false; startTask = nil; running = true; recordingStarted?()
+                busy = false; preparingCapture = false; startTask = nil; running = true; recordingStarted?()
                 beginTranslation(token: token)
                 coreTask = Task { [weak self] in
                     do {
@@ -455,7 +478,10 @@ final class CaptionModel: ObservableObject {
                     }
                 }
             } catch {
-                if generation == token { stop(message: "无法开始：\(error.localizedDescription)") }
+                if generation == token {
+                    stop(message: "无法开始：\(error.localizedDescription)")
+                    captureNotice?(status)
+                }
             }
         }
     }
@@ -542,7 +568,7 @@ final class CaptionModel: ObservableObject {
         historyEntries = liveBuffer.entries
         guard !text.isEmpty, liveBuffer.mayDisplay(job) else { return }
         let caption = ReadingCaption(id: job.id, source: job.english, english: cleanedEnglish ?? job.english, chinese: text, complete: complete)
-        if let ready = readingBuffer.submit(caption, hold: captionHoldSeconds) { present(ready) }
+        if let ready = readingBuffer.submit(caption, hold: captionHoldSeconds, live: !readingPriority) { present(ready) }
     }
     private func showTranslationFailure(_ failure: TranslationFailure) {
         translationProblem = "翻译暂不可用：\(failure.message)"
@@ -603,7 +629,12 @@ final class CaptionModel: ObservableObject {
                     else if let translationOverride { translated = try await translationOverride(job.english, preceding, glossary, update) }
                     else if let refiner {
                         let pair = try await refiner.refine(job.english, glossary: glossary,
-                            context: preceding.map { .init(english: $0.english, chinese: $0.chinese) })
+                            context: preceding.map { .init(english: $0.english, chinese: $0.chinese) }, update: { [weak self] pair in
+                                await MainActor.run {
+                                    guard let self, self.generation == token, self.translationEpoch == epoch, self.running, !Task.isCancelled else { return }
+                                    self.showTranslation(pair.chinese, job: job, complete: false, cleanedEnglish: pair.english)
+                                }
+                            })
                         refined = pair; translated = pair.chinese
                     }
                     else if let gpt { translated = try await gpt.stream(job.english, context: preceding, glossary: glossary, update: update) }
@@ -708,6 +739,7 @@ final class CaptionModel: ObservableObject {
         guard !busy || startTask != nil else { return }
         let wasRecording = running
         generation = UUID(); startTask?.cancel(); startTask = nil
+        preparingCapture = false
         translationTask?.cancel(); translationTask = nil
         coreTask?.cancel(); coreTask = nil; coreCapture?.stop(); coreCapture = nil; refiner = nil
         wisprCapture.stop(); wisprObserving = false; recordingActive = false; translationEpoch = UUID(); gpt = nil
@@ -949,12 +981,13 @@ struct SettingsView: View {
             }
             Text("当前翻译：" + model.activeTranslationEngine).font(.caption).foregroundStyle(.secondary)
             Text(model.fallbackStatus).font(.caption).foregroundStyle(.secondary)
+            Toggle("阅读优先（延长停留，可能落后于讲话）", isOn: $model.readingPriority)
             HStack {
                 Text("每组字幕至少保留")
                 Slider(value: $model.captionHoldSeconds, in: 2...12, step: 1)
                 Text("\(Int(model.captionHoldSeconds)) 秒")
-            }
-            Text("新识别片段不会清掉已完成的中英字幕；下一组译文就绪且达到停留时间后再替换。全部内容仍保存在回看与课堂文本中。")
+            }.disabled(!model.readingPriority)
+            Text(model.readingPriority ? "下一组译文就绪且达到停留时间后再替换。关闭阅读优先可实时跟随。" : "实时跟随：译文增量显示，不排队等待停留时间。新译文到达前保留上一组；全部内容可回看。")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Button("准备 Apple 离线翻译") { model.prepareTranslation() }.disabled(model.running || model.busy || model.translationReady)
@@ -1047,6 +1080,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         quickLauncher = IceLauncher(model: model)
         model.recordingStarted = { [weak self] in self?.quickLauncher?.showStartedNotice() }
         model.recordingStopped = { [weak self] in self?.quickLauncher?.showStoppedNotice() }
+        model.captureNotice = { [weak self] text in self?.quickLauncher?.showErrorNotice(text) }
         positionPanel(); showSettings()
         if model.simulation {
             simulationTask = Task {

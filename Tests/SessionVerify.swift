@@ -213,7 +213,7 @@ actor Calls {
         unavailable.receive(snapshot("", active: false))
 
         let paced = CaptionModel(simulation: true) { source, _, _, _ in "稳定译文：" + source }
-        paced.captionHoldSeconds = 2
+        paced.captionHoldSeconds = 2; paced.readingPriority = true
         paced.receive(snapshot("Please keep this pair readable.", id: 1))
         await waitUntil("first paced pair") { paced.chinese == "稳定译文：Please keep this pair readable." }
         paced.receive(snapshot("The next sentence is already recognized.", id: 2))
@@ -226,9 +226,63 @@ actor Calls {
         await wait(0.2)
         check(!paced.visible, "Stop cancels pending presentation updates immediately")
 
+        let live = CaptionModel(simulation: true) { source, _, _, update in
+            await update("实时中文：" + source)
+            try await Task.sleep(for: .milliseconds(200))
+            return "实时中文：" + source
+        }
+        live.readingPriority = false; live.captionHoldSeconds = 12
+        live.receive(snapshot("First live pair.", id: 1))
+        await waitUntil("first live pair stored") { live.historyEntries.first?.translatedSource == "First live pair." }
+        live.receive(snapshot("The speaker continues immediately.", id: 2))
+        await waitUntil("live partial bypasses twelve second dwell") { live.english == "The speaker continues immediately." }
+        check(live.historyEntries.last?.translatedSource.isEmpty == true, "live Chinese appears during streaming before the response completes")
+        live.receive(snapshot("", active: false))
+
+        let startingFixture = StartingSpeechFixture()
+        let starting = CaptionModel(simulation: true, archive: archive, coreFactory: { _, _, _ in startingFixture }, operation: { source, _, _, _ in source })
+        starting.inputMode = "whisperkit"; starting.autoArchive = false
+        var startedNotices = 0
+        starting.recordingStarted = { startedNotices += 1 }
+        let ice = IceButtonView(frame: .init(x: 0, y: 0, width: 56, height: 56)); ice.model = starting
+        check(ice.acceptsFirstMouse(for: nil), "inactive ice accepts the first click")
+        _ = ice.accessibilityPerformPress()
+        check(starting.preparingCapture && starting.quickActionTitle == "取消准备" && startedNotices == 0, "ice acknowledges preparation without falsely announcing recording")
+        starting.quickToggle(showSettingsOnFailure: false)
+        await waitUntil("preparation canceled") { !starting.busy }
+        await wait(0.3)
+        check(!starting.running && startedNotices == 0, "canceling preparation cannot start microphone later")
+        _ = ice.accessibilityPerformPress()
+        await waitUntil("ice automatically starts after preparation") { starting.running }
+        check(!starting.preparingCapture && startedNotices == 1, "one ice click starts capture automatically and announces success once")
+        starting.quickToggle(showSettingsOnFailure: false)
+        await waitUntil("ice stop drains") { !starting.busy }
+        check(!starting.visible && startingFixture.finishCalls == 1, "ice Stop hides subtitles and finalizes capture")
+        startingFixture.fail = true
+        var startupError = ""
+        starting.captureNotice = { startupError = $0 }
+        starting.quickToggle(showSettingsOnFailure: false)
+        await waitUntil("startup failure visible at ice") { !startupError.isEmpty }
+        check(startupError.contains("无法开始") && !starting.running && !starting.preparingCapture, "startup failures are surfaced without opening Settings or falsely recording")
+
         let report: [String: Any] = ["tested_at": ISO8601DateFormatter().string(from: Date()), "microphone_used": false,
             "real_wispr_recording_started": false, "translator": "deterministic simulated service", "checks": passed, "count": passed.count]
         try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: ".build/session-report.json"))
         print("Session simulations passed: \(passed.count); no microphone, Wispr control, Keychain or real API calls.")
     }
+}
+
+@MainActor final class StartingSpeechFixture: StreamingTranscriber {
+    var fail = false, finishCalls = 0
+    var output: AsyncThrowingStream<TranscriptEvent, Error>.Continuation?
+    func start(status: @escaping @MainActor (String) -> Void) async throws -> AsyncThrowingStream<TranscriptEvent, Error> {
+        status("Preparing fixture")
+        try await Task.sleep(for: .milliseconds(250))
+        if fail { throw GlacierCoreError.message("Microphone unavailable in fixture") }
+        let (stream, output) = AsyncThrowingStream<TranscriptEvent, Error>.makeStream()
+        self.output = output
+        return stream
+    }
+    func finish() async throws { finishCalls += 1; output?.finish() }
+    func stop() { output?.finish() }
 }
