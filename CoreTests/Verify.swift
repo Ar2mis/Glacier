@@ -54,6 +54,10 @@ final class RefinerMock: URLProtocol, @unchecked Sendable {
         precondition((input["previous_captions"] as! [[String: String]]).count == 4)
         precondition(input["transcript"] as? String == "um cells like these use os Moses", "Keep raw source intact; let the prompt distinguish meaningful like")
         precondition((body["instructions"] as! String).contains("negations"))
+        let format = (body["text"] as! [String: Any])["format"] as! [String: Any]
+        let schema = format["schema"] as! [String: Any]
+        precondition((schema["required"] as? [String]) == ["chinese", "english"])
+        precondition((body["instructions"] as! String).contains("chinese field FIRST"))
         let mini = try TranscriptRefiner.requestBody(text: "x", glossary: "", context: [], model: "gpt-5-mini")
         precondition((mini["reasoning"] as? [String: String])?["effort"] == "minimal")
         func response(_ english: String, _ chinese: String, status: String = "completed") throws -> Data {

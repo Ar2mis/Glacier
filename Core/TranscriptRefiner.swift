@@ -42,7 +42,8 @@ public struct TranscriptRefiner: Sendable {
         var body: [String: Any] = ["model": model, "store": false, "max_output_tokens": model == "gpt-5-mini" ? 2048 : 1200,
             "instructions": """
             Edit a live academic ASR caption conservatively and translate it into Simplified Chinese.
-            Return cleaned English and Chinese for ONLY the current transcript. Remove um/uh and
+            Output the chinese field FIRST, then cleaned english, for ONLY the current transcript.
+            Chinese must translate the conservatively corrected meaning. Remove um/uh and
             disfluencies only when they add no meaning. Keep meaningful 'like', comparisons, negations,
             numbers and uncertainty. Correct a technical homophone only when the supplied course
             vocabulary and context support it; otherwise preserve the original. Do not invent facts,
@@ -53,7 +54,7 @@ public struct TranscriptRefiner: Sendable {
             "input": String(data: try JSONSerialization.data(withJSONObject: input), encoding: .utf8)!,
             "text": ["format": ["type": "json_schema", "name": "bilingual_caption", "strict": true,
                 "schema": ["type": "object", "properties": ["english": ["type": "string"], "chinese": ["type": "string"]],
-                    "required": ["english", "chinese"], "additionalProperties": false]]]]
+                    "required": ["chinese", "english"], "additionalProperties": false]]]]
         if model == "gpt-5-mini" { body["reasoning"] = ["effort": "minimal"] }
         return body
     }
@@ -91,7 +92,10 @@ public struct TranscriptRefiner: Sendable {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         var body = try Self.requestBody(text: text, glossary: glossary, context: context, model: model)
         if update != nil { body["stream"] = true }
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        // Swift Dictionary iteration is unordered. Alphabetic schema properties
+        // put chinese before english on the wire, avoiding an English-generation
+        // delay before the first Chinese delta. The parser accepts either order.
+        request.httpBody = try JSONSerialization.data(withJSONObject: body, options: .sortedKeys)
         let configuredRequest = request
         return try await withThrowingTaskGroup(of: BilingualCaption.self) { group in
             group.addTask { [session] in

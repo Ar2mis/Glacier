@@ -139,6 +139,8 @@ final class CaptionModel: ObservableObject {
     private let wisprCapture = WisprCapture()
     private var startTask: Task<Void, Never>?
     private var translationTask: Task<Void, Never>?
+    private var translationRequests: [UUID: (job: CaptionJob, task: Task<Void, Never>)] = [:]
+    private var displayedTranslationSequence = 0
     private var session: TranslationSession?
     private var generation = UUID()
     private var liveBuffer = LiveCaptionBuffer()
@@ -510,7 +512,7 @@ final class CaptionModel: ObservableObject {
         status = "已就绪 · 在 Wispr 或冰块开始录音均可"
     }
     private func resetCaptionSession() {
-        translationTask?.cancel(); translationEpoch = UUID()
+        cancelTranslationWork()
         liveBuffer = LiveCaptionBuffer(); historyEntries = []; currentCaptionID = ""
         readingTask?.cancel(); readingBuffer = CaptionReadingBuffer(); stablePrefix = StableCaptionPrefix()
         liveDraft = nil; translationCatchingUp = false
@@ -544,7 +546,7 @@ final class CaptionModel: ObservableObject {
             displaySegments(snapshot.segments)
             running = false; recordingActive = false
             translationEpoch = UUID()
-            translationTask?.cancel(); translationTask = nil
+            cancelTranslationWork()
             queuedSentences = 0
             hideCaptions()
             if !quickBusy { recordingStopped?() }
@@ -583,12 +585,20 @@ final class CaptionModel: ObservableObject {
         else { refreshLiveEnglish() }
         layoutChanged?()
     }
-    private func showTranslation(_ text: String, job: CaptionJob, complete: Bool, cleanedEnglish: String? = nil) {
+    private func showTranslation(_ text: String, job: CaptionJob, complete: Bool, cleanedEnglish: String? = nil, sequence: Int) {
         liveBuffer.translated(job, text: text, complete: complete)
         historyEntries = liveBuffer.entries
         guard !text.isEmpty, liveBuffer.mayDisplay(job) else { return }
+        if !readingPriority, let current = readingBuffer.current,
+           let shownIndex = liveBuffer.entries.firstIndex(where: { $0.id == current.id }),
+           let jobIndex = liveBuffer.entries.firstIndex(where: { $0.id == job.id }), jobIndex < shownIndex { return }
+        // Overlapped requests may complete in either order. Keep useful old
+        // results in history without rewinding the current Chinese subtitle.
+        guard sequence >= displayedTranslationSequence else { return }
         let caption = ReadingCaption(id: job.id, source: job.english, english: cleanedEnglish ?? job.english, chinese: text, complete: complete)
-        if let ready = readingBuffer.submit(caption, hold: captionHoldSeconds, live: !readingPriority) { present(ready) }
+        if let ready = readingBuffer.submit(caption, hold: captionHoldSeconds, live: !readingPriority) {
+            displayedTranslationSequence = sequence; present(ready)
+        }
     }
     private func showTranslationFailure(_ failure: TranslationFailure) {
         translationProblem = "翻译暂不可用：\(failure.message)"
@@ -598,13 +608,29 @@ final class CaptionModel: ObservableObject {
         }
         layoutChanged?()
     }
-    private func beginTranslation(token: UUID) {
+    private func cancelTranslationWork() {
         translationTask?.cancel()
+        translationTask = nil
+        translationRequests.values.forEach { $0.task.cancel() }
+        translationRequests.removeAll()
+        translationEpoch = UUID()
+    }
+    private func beginTranslation(token: UUID) {
+        cancelTranslationWork()
         translationEpoch = UUID(); let epoch = translationEpoch
+        displayedTranslationSequence = 0
         translationTask = Task {
             var useLocal = translationMode == "apple"
             var fallbackReason: String?
             var failures = 0
+            var nextStart = Date.distantPast, retryAfter = Date.distantPast
+            var sequence = 0
+            defer {
+                if translationEpoch == epoch {
+                    translationRequests.values.forEach { $0.task.cancel() }
+                    translationRequests.removeAll()
+                }
+            }
             _ = await ensureLocalTranslation(requestDownload: useLocal)
             guard !Task.isCancelled, translationEpoch == epoch else { return }
             if !useLocal && translationOverride == nil {
@@ -628,68 +654,91 @@ final class CaptionModel: ObservableObject {
             }
             activeTranslationEngine = useLocal ? "Apple 本机翻译" : "\(provider.title) · \(refiner != nil ? refineModel : gptModel)"
             while !Task.isCancelled && generation == token && translationEpoch == epoch && running {
+                // Only live cloud captions overlap. Apple sessions and reading
+                // priority remain serial. Limit both concurrency and launch rate.
+                let overlap = !readingPriority && !useLocal
+                guard translationRequests.count < (overlap ? 2 : 1), Date() >= retryAfter,
+                      !overlap || Date() >= nextStart else { try? await Task.sleep(for: .milliseconds(40)); continue }
                 guard let job = liveBuffer.nextJob(preferLatest: !readingPriority) else { try? await Task.sleep(for: .milliseconds(80)); continue }
                 queuedSentences = liveBuffer.jobs.count
                 let preceding = liveBuffer.context(before: job.id)
-                do {
-                    let translated: String
-                    var refined: BilingualCaption?
-                    let update: @Sendable (String) async -> Void = { [weak self] text in
-                        guard let owner = self else { return }
-                        await MainActor.run {
-                            guard owner.generation == token, owner.translationEpoch == epoch, !Task.isCancelled, owner.running else { return }
-                            owner.showTranslation(text, job: job, complete: false)
+                let requestID = UUID(), requestUsesLocal = useLocal
+                sequence += 1; let requestSequence = sequence
+                nextStart = Date().addingTimeInterval(0.8)
+                let request = Task {
+                    defer { translationRequests[requestID] = nil }
+                    do {
+                        let translated: String
+                        var refined: BilingualCaption?
+                        let update: @Sendable (String) async -> Void = { [weak owner = self] text in
+                            guard let owner else { return }
+                            await MainActor.run {
+                                guard owner.generation == token, owner.translationEpoch == epoch, !Task.isCancelled,
+                                      owner.running, owner.translationRequests[requestID] != nil else { return }
+                                owner.showTranslation(text, job: job, complete: false, sequence: requestSequence)
+                            }
                         }
-                    }
-                    if useLocal {
-                        if let localTranslationOverride { translated = try await localTranslationOverride(job.english) }
-                        else if let session { translated = try await session.translate(job.english).targetText }
-                        else { throw TranslationFailure(kind: .access, message: fallbackStatus) }
-                    }
-                    else if let translationOverride { translated = try await translationOverride(job.english, preceding, glossary, update) }
-                    else if let refiner {
-                        let pair = try await refiner.refine(job.english, glossary: glossary,
-                            context: preceding.map { .init(english: $0.english, chinese: $0.chinese) }, update: { [weak self] pair in
-                                await MainActor.run {
-                                    guard let self, self.generation == token, self.translationEpoch == epoch, self.running, !Task.isCancelled else { return }
-                                    self.showTranslation(pair.chinese, job: job, complete: false, cleanedEnglish: pair.english)
-                                }
-                            })
-                        refined = pair; translated = pair.chinese
-                    }
-                    else if let gpt { translated = try await gpt.stream(job.english, context: preceding, glossary: glossary, update: update) }
-                    else { throw TranslationFailure(kind: .access, message: "翻译引擎尚未准备好") }
-                    guard !Task.isCancelled, generation == token, translationEpoch == epoch, running else { return }
-                    failures = 0; translationProblem = nil
-                    showTranslation(translated, job: job, complete: true, cleanedEnglish: refined?.english)
-                    if let refined {
-                        liveBuffer.refined(job, english: refined.english, chinese: refined.chinese)
-                        historyEntries = liveBuffer.entries
-                    }
-                    queuedSentences = liveBuffer.jobs.count
-                    if let fallbackReason { status = "本机翻译接替云端 · \(fallbackReason)" }
-                    else { status = simulation ? "模拟课堂 · 中英文实时更新 · 未使用麦克风" : "实时字幕 · 中英文同步更新" }
-                } catch {
-                    guard !Task.isCancelled, generation == token, translationEpoch == epoch, running else { return }
-                    let failure: TranslationFailure
-                    if let service = error as? RefinementServiceFailure {
-                        failure = .init(kind: service.retryable ? .network : .access, message: service.localizedDescription, retryAfter: 2)
-                    } else { failure = TranslationFailure.classify(error) }
-                    failures += 1
-                    let localReady = !useLocal ? await ensureLocalTranslation(requestDownload: true) : false
-                    guard !Task.isCancelled, generation == token, translationEpoch == epoch else { return }
-                    if localReady {
-                        useLocal = true; fallbackReason = failure.message; activeTranslationEngine = "Apple 本机翻译 · 云端暂不可用"
+                        if requestUsesLocal {
+                            if let localTranslationOverride { translated = try await localTranslationOverride(job.english) }
+                            else if let session { translated = try await session.translate(job.english).targetText }
+                            else { throw TranslationFailure(kind: .access, message: fallbackStatus) }
+                        }
+                        else if let translationOverride { translated = try await translationOverride(job.english, preceding, glossary, update) }
+                        else if let refiner {
+                            let pair = try await refiner.refine(job.english, glossary: glossary,
+                                context: preceding.map { .init(english: $0.english, chinese: $0.chinese) }, update: { [weak owner = self] pair in
+                                    guard let owner else { return }
+                                    await MainActor.run {
+                                        guard owner.generation == token, owner.translationEpoch == epoch, owner.running,
+                                              !Task.isCancelled, owner.translationRequests[requestID] != nil else { return }
+                                        owner.showTranslation(pair.chinese, job: job, complete: false, cleanedEnglish: pair.english, sequence: requestSequence)
+                                    }
+                                })
+                            refined = pair; translated = pair.chinese
+                        }
+                        else if let gpt { translated = try await gpt.stream(job.english, context: preceding, glossary: glossary, update: update) }
+                        else { throw TranslationFailure(kind: .access, message: "翻译引擎尚未准备好") }
+                        guard !Task.isCancelled, generation == token, translationEpoch == epoch, running else { return }
+                        failures = 0; translationProblem = nil
+                        showTranslation(translated, job: job, complete: true, cleanedEnglish: refined?.english, sequence: requestSequence)
+                        if let refined {
+                            liveBuffer.refined(job, english: refined.english, chinese: refined.chinese)
+                            historyEntries = liveBuffer.entries
+                        }
+                        queuedSentences = liveBuffer.jobs.count
+                        if let fallbackReason { status = "本机翻译接替云端 · \(fallbackReason)" }
+                        else { status = simulation ? "模拟课堂 · 中英文实时更新 · 未使用麦克风" : "实时字幕 · 中英文同步更新" }
+                    } catch {
+                        guard !Task.isCancelled, generation == token, translationEpoch == epoch, running else { return }
+                        // Another overlapping cloud failure may already have switched
+                        // to Apple. Do not let this older failure disable that fallback.
+                        if !requestUsesLocal && useLocal { liveBuffer.retry(job); return }
+                        let failure: TranslationFailure
+                        if let service = error as? RefinementServiceFailure {
+                            failure = .init(kind: service.retryable ? .network : .access, message: service.localizedDescription, retryAfter: 2)
+                        } else { failure = TranslationFailure.classify(error) }
+                        failures += 1
+                        let localReady = !requestUsesLocal ? await ensureLocalTranslation(requestDownload: true) : false
+                        guard !Task.isCancelled, generation == token, translationEpoch == epoch else { return }
+                        if localReady {
+                            useLocal = true; fallbackReason = failure.message; activeTranslationEngine = "Apple 本机翻译 · 云端暂不可用"
+                            // A hung sibling must not delay the local fallback.
+                            for (id, request) in translationRequests where id != requestID {
+                                request.task.cancel(); liveBuffer.retry(request.job)
+                            }
+                            translationRequests = translationRequests.filter { $0.key == requestID }
+                            liveBuffer.retry(job)
+                            status = "云端暂不可用，已切换本机翻译"
+                            return
+                        }
+                        showTranslationFailure(.init(kind: failure.kind, message: failure.message + (useLocal ? "" : " · " + fallbackStatus), retryAfter: failure.retryAfter))
+                        if !failure.retryable { cancelTranslationWork(); return }
                         liveBuffer.retry(job)
-                        status = "云端暂不可用，已切换本机翻译"
-                        continue
+                        let delay = max(failure.retryAfter, min(30, pow(2, Double(min(failures, 5)))))
+                        retryAfter = Date().addingTimeInterval(delay)
                     }
-                    showTranslationFailure(.init(kind: failure.kind, message: failure.message + (useLocal ? "" : " · " + fallbackStatus), retryAfter: failure.retryAfter))
-                    if !failure.retryable { return }
-                    liveBuffer.retry(job)
-                    let delay = max(failure.retryAfter, min(30, pow(2, Double(min(failures, 5)))))
-                    try? await Task.sleep(for: .seconds(delay))
                 }
+                translationRequests[requestID] = (job, request)
             }
         }
     }
@@ -734,7 +783,7 @@ final class CaptionModel: ObservableObject {
         let consumer = coreTask
         drainingCore = true; busy = true; running = false
         hideCaptions(); recordingStopped?()
-        translationTask?.cancel(); translationTask = nil; translationEpoch = UUID()
+        cancelTranslationWork()
         status = "麦克风已停止 · 正在完成最后一句并保存全文…"
         coreFinishTask = Task {
             defer {
@@ -761,7 +810,7 @@ final class CaptionModel: ObservableObject {
         let wasRecording = running
         generation = UUID(); startTask?.cancel(); startTask = nil
         preparingCapture = false
-        translationTask?.cancel(); translationTask = nil
+        cancelTranslationWork()
         coreTask?.cancel(); coreTask = nil; coreCapture?.stop(); coreCapture = nil; refiner = nil
         wisprCapture.stop(); wisprObserving = false; recordingActive = false; translationEpoch = UUID(); gpt = nil
         queuedSentences = 0

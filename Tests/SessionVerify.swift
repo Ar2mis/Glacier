@@ -9,6 +9,14 @@ actor Calls {
     func contains(_ value: String) -> Bool { values.contains(value) }
 }
 
+actor ConcurrentCalls {
+    var active = 0, peak = 0, cancelled = 0
+    var starts: [Date] = []
+    func begin() { active += 1; peak = max(peak, active); starts.append(Date()) }
+    func end(cancelled: Bool = false) { active -= 1; if cancelled { self.cancelled += 1 } }
+    func state() -> (Int, Int, Int, [Date]) { (active, peak, cancelled, starts) }
+}
+
 @MainActor final class FinalizingSpeechFixture: StreamingTranscriber {
     var finishCalls = 0
     var continuation: AsyncThrowingStream<TranscriptEvent, Error>.Continuation?
@@ -243,7 +251,8 @@ actor Calls {
         let latestCalls = Calls()
         let latest = CaptionModel(simulation: true) { source, _, _, _ in
             let number = await latestCalls.record(source)
-            try await Task.sleep(for: .milliseconds(number == 1 ? 600 : 50))
+            try await Task.sleep(for: .milliseconds(number == 1 ? 2400 : 50))
+            if number == 1 { _ = await latestCalls.record("first finished") }
             return "译文：" + source
         }
         latest.readingPriority = false
@@ -253,7 +262,47 @@ actor Calls {
         await waitUntil("newest sentence translated after busy request") { latest.historyEntries.last?.translatedSource == "New sentence 4." }
         let latestCount = await latestCalls.count()
         check(latestCount == 2 && latest.historyEntries.count == 4 && latest.english == "New sentence 4.", "live translation catches up in one request while preserving skipped English history")
+        check(!(await latestCalls.contains("first finished")), "new Chinese arrives while the older slow request is still in flight")
+        await waitUntil("older overlapping request finishes") { await latestCalls.contains("first finished") }
+        check(latest.chinese == "译文：New sentence 4." && latest.historyEntries.first?.translatedSource == "First request in flight.", "late older Chinese is saved in history without rewinding the screen")
         latest.receive(snapshot("", active: false))
+
+        let concurrency = ConcurrentCalls()
+        let bounded = CaptionModel(simulation: true) { source, _, _, update in
+            await concurrency.begin()
+            do { try await Task.sleep(for: .seconds(4)) }
+            catch { await concurrency.end(cancelled: true); await update("过期回调"); throw error }
+            await concurrency.end(); return source
+        }
+        bounded.readingPriority = false
+        for id in 1...6 {
+            bounded.receive(snapshot("Bounded cloud request \(id).", id: id))
+            await wait(0.3)
+        }
+        let beforeStop = await concurrency.state()
+        check(beforeStop.0 == 2 && beforeStop.1 == 2 && beforeStop.3.count == 2, "live cloud translation never exceeds two in-flight requests")
+        check(beforeStop.3[1].timeIntervalSince(beforeStop.3[0]) >= 0.75, "overlap is rate-limited instead of launching on every ASR edit")
+        bounded.receive(snapshot("", active: false))
+        await waitUntil("both cloud requests canceled by Stop") { await concurrency.state().2 == 2 }
+        check(!bounded.visible && bounded.chinese != "过期回调", "Stop cancels both requests and rejects their late callbacks")
+
+        let fallbackCalls = Calls(), fallbackOverlap = ConcurrentCalls()
+        let overlappedFallback = CaptionModel(simulation: true, localTranslation: { "本机：" + $0 }, operation: { source, _, _, _ in
+            let number = await fallbackCalls.record(source)
+            await fallbackOverlap.begin()
+            do { try await Task.sleep(for: .milliseconds(number == 1 ? 1300 : 4000)) }
+            catch { await fallbackOverlap.end(cancelled: true); throw error }
+            await fallbackOverlap.end(); throw URLError(.notConnectedToInternet)
+        })
+        overlappedFallback.readingPriority = false; overlappedFallback.translationMode = "gpt"
+        overlappedFallback.receive(snapshot("Older cloud request fails.", id: 1))
+        await waitUntil("first cloud request started") { await fallbackCalls.count() == 1 }
+        overlappedFallback.receive(snapshot("Newest source must survive fallback.", id: 2))
+        await waitUntil("fallback translates the canceled newest source") {
+            overlappedFallback.chinese == "本机：Newest source must survive fallback."
+        }
+        check(await fallbackOverlap.state().2 == 1, "network fallback cancels a hung sibling and requeues its source for Apple")
+        overlappedFallback.receive(snapshot("", active: false))
 
         let startingFixture = StartingSpeechFixture()
         let starting = CaptionModel(simulation: true, archive: archive, coreFactory: { _, _, _ in startingFixture }, operation: { source, _, _, _ in source })

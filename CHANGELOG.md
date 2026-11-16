@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Reduce Chinese translation head-of-line delay (2026-11-16)
+- The owner confirmed that 0.6.4 made English noticeably faster, while Chinese still lagged. This follow-up targets translation scheduling without changing ASR models or discarding the full lecture transcript.
+- Request Chinese before cleaned English using an explicit instruction, required-field order and deterministic JSON schema serialization. Retain strict completion validation and the existing conservative glossary/negation rules.
+- Allow at most two live cloud requests, spaced by at least 800 ms. Coalesce pending work to the newest ready source; keep Apple translation and reading-priority mode serial.
+- Keep out-of-order results in their exact-source history entries without rewinding displayed Chinese. Stop/restart cancels all active requests and rejects late callbacks. Network retry backoff and Apple fallback remain available.
+- Verified the full native build and shared Core suite, 41 session assertions, 34 portable tests, accelerated two-hour soak, Word export/recovery checks and the daily workflow guard.
+- Three synthetic GPT-4o mini smoke requests produced first Chinese in 2.51, 0.77 and 0.62 seconds, before cleanup completed. These are network-dependent translation-only samples, not end-to-end classroom latency measurements.
+
 ### Catch up during continuous speech (2026-11-16)
 - Local voice testing confirmed the ice starts the microphone and stops/finalizes the recording, but the user still experienced caption latency.
 - Decouple live English from GPT and stable-prefix translation scheduling: raw ASR drafts appear immediately, previous Chinese stays visible with a catching-up label, and older translation replies cannot rewind the English. Reading-priority mode still holds matched pairs.
