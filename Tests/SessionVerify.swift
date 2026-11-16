@@ -235,9 +235,25 @@ actor Calls {
         live.receive(snapshot("First live pair.", id: 1))
         await waitUntil("first live pair stored") { live.historyEntries.first?.translatedSource == "First live pair." }
         live.receive(snapshot("The speaker continues immediately.", id: 2))
-        await waitUntil("live partial bypasses twelve second dwell") { live.english == "The speaker continues immediately." }
+        check(live.english == "The speaker continues immediately." && live.translationCatchingUp, "live English advances immediately while previous Chinese is explicitly marked as catching up")
+        await waitUntil("live partial bypasses twelve second dwell") { live.chinese == "实时中文：The speaker continues immediately." }
         check(live.historyEntries.last?.translatedSource.isEmpty == true, "live Chinese appears during streaming before the response completes")
         live.receive(snapshot("", active: false))
+
+        let latestCalls = Calls()
+        let latest = CaptionModel(simulation: true) { source, _, _, _ in
+            let number = await latestCalls.record(source)
+            try await Task.sleep(for: .milliseconds(number == 1 ? 600 : 50))
+            return "译文：" + source
+        }
+        latest.readingPriority = false
+        latest.receive(snapshot("First request in flight.", id: 1))
+        await waitUntil("first live request held") { await latestCalls.count() == 1 }
+        for id in 2...4 { latest.receive(snapshot("New sentence \(id).", id: id)) }
+        await waitUntil("newest sentence translated after busy request") { latest.historyEntries.last?.translatedSource == "New sentence 4." }
+        let latestCount = await latestCalls.count()
+        check(latestCount == 2 && latest.historyEntries.count == 4 && latest.english == "New sentence 4.", "live translation catches up in one request while preserving skipped English history")
+        latest.receive(snapshot("", active: false))
 
         let startingFixture = StartingSpeechFixture()
         let starting = CaptionModel(simulation: true, archive: archive, coreFactory: { _, _, _ in startingFixture }, operation: { source, _, _, _ in source })
@@ -255,6 +271,10 @@ actor Calls {
         _ = ice.accessibilityPerformPress()
         await waitUntil("ice automatically starts after preparation") { starting.running }
         check(!starting.preparingCapture && startedNotices == 1, "one ice click starts capture automatically and announces success once")
+        startingFixture.output?.yield(.init(id: 0, text: "New words appear without waiting for translation", isFinal: false))
+        await waitUntil("first unconfirmed ASR draft visible") { starting.english == "New words appear without waiting for translation" }
+        check(starting.historyEntries.isEmpty, "raw English appears before the stability gate permits any translation request")
+        startingFixture.output?.yield(.init(id: 0, text: "New words appear without waiting for translation.", isFinal: true))
         starting.quickToggle(showSettingsOnFailure: false)
         await waitUntil("ice stop drains") { !starting.busy }
         check(!starting.visible && startingFixture.finishCalls == 1, "ice Stop hides subtitles and finalizes capture")

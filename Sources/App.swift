@@ -119,6 +119,7 @@ final class CaptionModel: ObservableObject {
         didSet { UserDefaults.standard.set(readingPriority, forKey: "readingPriority") }
     }
     @Published var activeTranslationEngine = "等待翻译"
+    @Published var translationCatchingUp = false
     @Published var fallbackStatus = "Checking Apple English–Chinese language pack…"
     @Published var queuedSentences = 0
     var canStart: Bool { !busy }
@@ -147,6 +148,7 @@ final class CaptionModel: ObservableObject {
     private var readingBuffer = CaptionReadingBuffer()
     private var readingTask: Task<Void, Never>?
     private var stablePrefix = StableCaptionPrefix()
+    private var liveDraft: CaptionJob?
     private var gpt: GPTTranslator?
     private var translationEpoch = UUID()
     private var wisprObserving = false
@@ -464,11 +466,14 @@ final class CaptionModel: ObservableObject {
                             try await self.archive.lectures.append(event, to: saved.id)
                             guard self.generation == token else { return }
                             if self.drainingCore { continue }
+                            let pieces = SentenceFeed.sentences(event.text)
+                            self.liveDraft = pieces.last.map { .init(id: "\(event.id):\(pieces.count - 1)", english: $0) }
                             if let stable = self.stablePrefix.observe(event) {
                                 self.displaySegments([.init(id: event.id, text: stable)])
                             } else if self.readingBuffer.current == nil {
                                 self.english = event.text; self.chinese = "识别中…"; self.layoutChanged?()
                             }
+                            if !self.readingPriority { self.refreshLiveEnglish(); self.layoutChanged?() }
                         }
                         if let self, self.generation == token, self.running { self.stop(message: "转录已结束") }
                     } catch {
@@ -508,6 +513,7 @@ final class CaptionModel: ObservableObject {
         translationTask?.cancel(); translationEpoch = UUID()
         liveBuffer = LiveCaptionBuffer(); historyEntries = []; currentCaptionID = ""
         readingTask?.cancel(); readingBuffer = CaptionReadingBuffer(); stablePrefix = StableCaptionPrefix()
+        liveDraft = nil; translationCatchingUp = false
         queuedSentences = 0; translationProblem = nil
         readingTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -558,10 +564,24 @@ final class CaptionModel: ObservableObject {
         }
         historyEntries = liveBuffer.entries
         queuedSentences = liveBuffer.jobs.count
+        if !readingPriority { refreshLiveEnglish() }
         layoutChanged?()
     }
+    private func refreshLiveEnglish() {
+        let latest = liveDraft ?? liveBuffer.entries.last.map { CaptionJob(id: $0.id, english: $0.english) }
+        guard let latest else { return }
+        if let pair = readingBuffer.current, pair.id == latest.id && pair.source == latest.english {
+            english = pair.english; translationCatchingUp = !pair.complete
+        } else {
+            english = latest.english
+            translationCatchingUp = readingBuffer.current != nil
+        }
+    }
     private func present(_ caption: ReadingCaption) {
-        english = caption.english; chinese = caption.chinese; layoutChanged?()
+        english = caption.english; chinese = caption.chinese
+        if readingPriority { translationCatchingUp = false }
+        else { refreshLiveEnglish() }
+        layoutChanged?()
     }
     private func showTranslation(_ text: String, job: CaptionJob, complete: Bool, cleanedEnglish: String? = nil) {
         liveBuffer.translated(job, text: text, complete: complete)
@@ -608,7 +628,7 @@ final class CaptionModel: ObservableObject {
             }
             activeTranslationEngine = useLocal ? "Apple 本机翻译" : "\(provider.title) · \(refiner != nil ? refineModel : gptModel)"
             while !Task.isCancelled && generation == token && translationEpoch == epoch && running {
-                guard let job = liveBuffer.nextJob() else { try? await Task.sleep(for: .milliseconds(80)); continue }
+                guard let job = liveBuffer.nextJob(preferLatest: !readingPriority) else { try? await Task.sleep(for: .milliseconds(80)); continue }
                 queuedSentences = liveBuffer.jobs.count
                 let preceding = liveBuffer.context(before: job.id)
                 do {
@@ -705,6 +725,7 @@ final class CaptionModel: ObservableObject {
     }
     private func hideCaptions() {
         readingTask?.cancel(); readingTask = nil; readingBuffer = CaptionReadingBuffer()
+        liveDraft = nil; translationCatchingUp = false
         visible = false
         layoutChanged?()
     }
@@ -798,6 +819,9 @@ struct CaptionView: View {
             Text(model.chinese).font(CaptionFonts.font(model.chineseFont, size: model.displayFontSize, bold: model.chineseBold || model.titleMode))
                 .foregroundStyle(model.chineseColor).fixedSize(horizontal: false, vertical: true)
                 .modifier(CaptionShadow(color: model.chineseColor, width: model.shadowWidth, blackWithoutShadow: model.blackWithoutShadow))
+            if model.translationCatchingUp {
+                Text("中文翻译正在跟进…").font(.system(size: 12)).foregroundStyle(model.chineseColor.opacity(0.75))
+            }
         }
         .multilineTextAlignment(.center)
         .minimumScaleFactor(0.75)
@@ -987,7 +1011,7 @@ struct SettingsView: View {
                 Slider(value: $model.captionHoldSeconds, in: 2...12, step: 1)
                 Text("\(Int(model.captionHoldSeconds)) 秒")
             }.disabled(!model.readingPriority)
-            Text(model.readingPriority ? "下一组译文就绪且达到停留时间后再替换。关闭阅读优先可实时跟随。" : "实时跟随：译文增量显示，不排队等待停留时间。新译文到达前保留上一组；全部内容可回看。")
+            Text(model.readingPriority ? "下一组译文就绪且达到停留时间后再替换。关闭阅读优先可实时跟随。" : "实时跟随：英文随识别立即更新，中文增量跟进。等待时保留上一段中文并标示；英文原文持续保存。")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Button("准备 Apple 离线翻译") { model.prepareTranslation() }.disabled(model.running || model.busy || model.translationReady)
@@ -1110,7 +1134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                                bold: model.englishBold || model.titleMode, width: width - 62)
         let chineseHeight = CaptionFonts.height(model.chinese, family: model.chineseFont, size: model.displayFontSize,
                                                bold: model.chineseBold || model.titleMode, width: width - 62)
-        let height = min(frame.height * 0.4, max(model.displayFontSize * 2.8 + 32, englishHeight + chineseHeight + 48))
+        let height = min(frame.height * 0.4, max(model.displayFontSize * 2.8 + 32, englishHeight + chineseHeight + 48 + (model.translationCatchingUp ? 19 : 0)))
         panel.setFrame(NSRect(x: frame.midX - width / 2, y: frame.minY + model.bottom, width: width, height: height), display: true)
         if model.visible { panel.orderFrontRegardless() } else { panel.orderOut(nil) }
     }

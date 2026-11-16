@@ -73,6 +73,14 @@ struct TranslationPair { let english: String; let chinese: String }
         precondition(revising.nextJob(now: deadline)?.english == "A final revision", "Continuous revisions cannot starve translation")
         precondition(debounceTimes(revising).isEmpty, "Dequeue clears its timer")
 
+        var live = LiveCaptionBuffer()
+        for id in 1...4 { _ = live.update([.init(id: id, text: "Pending sentence \(id).")], now: t.addingTimeInterval(Double(id) * 0.2)) }
+        precondition(live.nextJob(now: t.addingTimeInterval(0.82), preferLatest: true)?.id == "3:0", "Live mode selects the newest ready sentence, not the oldest backlog")
+        precondition(live.jobs.map(\.id) == ["4:0"], "A newer unready sentence is retained")
+        precondition(live.entries.count == 4, "Skipping stale live requests never removes original history")
+        precondition(live.nextJob(now: t.addingTimeInterval(1), preferLatest: true)?.id == "4:0")
+        precondition(live.jobs.isEmpty && debounceTimes(live).isEmpty)
+
         // A removed suffix that reappears must get a fresh debounce deadline.
         var merging = LiveCaptionBuffer()
         _ = merging.update([.init(id: 20, text: "One sentence. Another sentence.")], now: t)

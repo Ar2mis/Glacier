@@ -30,5 +30,11 @@ func verifyReadingPace() {
     precondition(stable.observe(.init(id: 1, text: "A new utterance must earn stability again", isFinal: false)) == nil)
     precondition(stable.observe(.init(id: 1, text: "A new utterance continues now", isFinal: false)) == nil)
     precondition(stable.observe(.init(id: 1, text: "A new utterance continues to grow", isFinal: false)) == "A new utterance")
+    var revisedCase = StableCaptionPrefix()
+    _ = revisedCase.observe(.init(id: 2, text: "Water crosses the membrane. It", isFinal: false))
+    precondition(revisedCase.observe(.init(id: 2, text: "water crosses the membrane it moves", isFinal: false)) == "water crosses the membrane", "Case/punctuation edits must not stall stable words until the final boundary")
+    var negation = StableCaptionPrefix()
+    _ = negation.observe(.init(id: 3, text: "It is not moving across", isFinal: false))
+    precondition(negation.observe(.init(id: 3, text: "It is now moving across", isFinal: false)) == nil, "Meaningful word revisions still require stability")
     print("PASS: minimum readable dwell, no blank expiry, bounded/coalesced presentation queue and early stable-prefix translation")
 }

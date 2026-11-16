@@ -60,7 +60,7 @@ struct LiveCaptionBuffer {
         if let first = segments.first?.id { seen = seen.filter { $0.key >= first - 2 } }
         return entries.last
     }
-    mutating func nextJob(now: Date = Date()) -> CaptionJob? {
+    mutating func nextJob(now: Date = Date(), preferLatest: Bool = false) -> CaptionJob? {
         // Keep recent completed sentences in order. Under overload skip work
         // older than eight seconds, while retaining every source in history.
         jobs.removeAll { job in
@@ -72,12 +72,21 @@ struct LiveCaptionBuffer {
         queuedAt = queuedAt.filter { jobIDs.contains($0.key) }
         let ready = jobs.filter { job in
             guard let entry = entries.first(where: { $0.id == job.id }) else { return false }
-            return now.timeIntervalSince(entry.lastSeen) >= 0.35 || now.timeIntervalSince(queuedAt[job.id] ?? now) >= 1.2
+            return now.timeIntervalSince(entry.lastSeen) >= (preferLatest ? 0.15 : 0.35) ||
+                now.timeIntervalSince(queuedAt[job.id] ?? now) >= (preferLatest ? 0.7 : 1.2)
         }
-        guard let job = ready.min(by: { left, right in
+        let ordered = ready.sorted(by: { left, right in
             (entries.firstIndex { $0.id == left.id } ?? 0) < (entries.firstIndex { $0.id == right.id } ?? 0)
-        }) else { return nil }
-        jobs.removeAll { $0.id == job.id }; queuedAt[job.id] = nil
+        })
+        guard let job = preferLatest ? ordered.last : ordered.first else { return nil }
+        if preferLatest, let selected = entries.firstIndex(where: { $0.id == job.id }) {
+            // Live captions follow speech instead of serially paying for every
+            // obsolete prefix. Keep all source entries and any newer unready job;
+            // full-lecture translation still uses the independent journal.
+            let obsolete = Set(entries[...selected].map(\.id))
+            jobs.removeAll { obsolete.contains($0.id) }
+            queuedAt = queuedAt.filter { !obsolete.contains($0.key) }
+        } else { jobs.removeAll { $0.id == job.id }; queuedAt[job.id] = nil }
         return job
     }
     mutating func retry(_ job: CaptionJob, now: Date = Date()) {

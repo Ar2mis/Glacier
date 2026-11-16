@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Catch up during continuous speech (2026-11-16)
+- Local voice testing confirmed the ice starts the microphone and stops/finalizes the recording, but the user still experienced caption latency.
+- Decouple live English from GPT and stable-prefix translation scheduling: raw ASR drafts appear immediately, previous Chinese stays visible with a catching-up label, and older translation replies cannot rewind the English. Reading-priority mode still holds matched pairs.
+- Stop treating capitalization/punctuation revisions as entirely unstable speech. Preserve real word-change and negation checks.
+- In live-follow mode, translate the newest ready sentence after a busy request and discard superseded queued requests, preserving all source history and the separate full-lecture journal. Reading-priority mode retains ordered translation.
+- Shorten live-only coalescing waits to 150 ms / 700 ms, with regression coverage for busy translation, retained unready work, complete source history and punctuation-only ASR changes.
+- Verified the full native suite: build, shared Core, 35 session assertions, 34 portable tests, accelerated soak and Word archive validation. The user voice test and transcripts remain local and are not committed.
+
 ### Responsive ice startup and live streaming (2026-11-15)
 - Reproduce the desktop startup stall in Core ML encoder specialization. Start microphone ingestion independently of model readiness, prewarm downloaded models on Mac launch without opening the microphone, use complete-cache lookup without remote enumeration, and retain the prepared Mac Whisper adapter. Hardware compute defaults and model choices are unchanged.
 - Accept the first inactive-window ice click, ignore the second click of a double-click, show persistent preparation/cancel state, and report startup failures beside the ice. Announce recording only after microphone startup succeeds.

@@ -67,7 +67,12 @@ public struct StableCaptionPrefix {
         let words = event.text.split(whereSeparator: { $0.isWhitespace }).map(String.init)
         defer { previous = words }
         if event.isFinal { emitted = event.text; return event.text }
-        let common = zip(previous, words).prefix(while: { $0.0 == $0.1 }).count
+        // Whisper frequently revises capitalization and punctuation while the
+        // spoken words are unchanged. Those edits must not reset all stability.
+        func spokenWord(_ value: String) -> String {
+            value.trimmingCharacters(in: .punctuationCharacters).lowercased()
+        }
+        let common = zip(previous, words).prefix(while: { spokenWord($0.0) == spokenWord($0.1) }).count
         let count = max(0, common - 1)
         guard count >= 3 else { return nil }
         let stable = words.prefix(count).joined(separator: " ")
