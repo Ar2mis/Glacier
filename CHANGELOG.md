@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### DI-06: Honor dated translation retry instructions (2026-11-17)
+- Add a shared Retry-After parser for nonnegative seconds and the three HTTP date formats, with an injectable reference time and fixed POSIX locale/GMT handling.
+- Clamp past dates to zero and fall back to the existing retry policy for missing, malformed, non-finite or out-of-range values. Keep provider error messages sanitized and preserve permanent quota/access error classification.
+- Use the parser in both complete-response and SSE error paths. Add deterministic date/invalid-value cases and mocked HTTP-date rate-limit coverage across OpenAI, Gemini and DeepSeek; no real API requests or keys are used.
+- Verification: full native `CI=true bash scripts/ci.sh`, including 34 portable tests, 33 stream checks, 41 session checks, shared Core, accelerated soak, Word export/recovery validation and the daily workflow guard.
+
 ### DI-05: Consistent course glossary prompts (2026-11-17)
 - Reuse GlacierCore's course vocabulary normalization for OpenAI, Gemini and DeepSeek translation prompts: trim empty lines, remove case-insensitive duplicates and preserve the first term's spelling and bilingual mapping.
 - Apply the 4,000-character limit after deduplication, including newline separators, without cutting a technical term in half.

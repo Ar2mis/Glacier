@@ -40,6 +40,36 @@ struct TranslationFailure: LocalizedError, Sendable {
     var retryAfter: TimeInterval = 0
     var errorDescription: String? { message }
     var retryable: Bool { [.rateLimit, .network, .incomplete].contains(kind) }
+    /// RFC 9110 sections 5.6.7 / 10.2.3: seconds or an HTTP-date.
+    /// Invalid/out-of-range values leave the existing retry backoff in control.
+    static func retryDelay(_ header: String?, now: Date = Date()) -> TimeInterval {
+        guard let value = header?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty, value.utf8.count <= 128 else { return 0 }
+        if value.utf8.allSatisfy({ (48...57).contains($0) }) {
+            // Bound integer conversion before any value reaches Task.sleep.
+            guard let seconds = Int32(value) else { return 0 }
+            return TimeInterval(seconds)
+        }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.isLenient = false
+        // RFC 850's two-digit year uses a moving window, independent of the
+        // machine's locale and DateFormatter's default century pivot.
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        formatter.twoDigitStartDate = calendar.date(byAdding: .year, value: -50, to: now)?.addingTimeInterval(1)
+        let formats = ["EEE, dd MMM yyyy HH:mm:ss 'GMT'", "EEEE, dd-MMM-yy HH:mm:ss 'GMT'", "EEE MMM d HH:mm:ss yyyy"]
+        for format in formats {
+            formatter.dateFormat = format
+            guard let date = formatter.date(from: value) else { continue }
+            let delay = date.timeIntervalSince(now)
+            guard delay.isFinite, delay <= TimeInterval(Int32.max) else { return 0 }
+            return max(0, delay)
+        }
+        return 0
+    }
     static func service(_ object: [String: Any], status: Int = 200, retryAfter: TimeInterval = 0) -> Self {
         let response = object["response"] as? [String: Any] ?? object
         let error = response["error"] as? [String: Any] ?? response
@@ -208,7 +238,7 @@ struct GPTTranslator {
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
             throw TranslationFailure.service(object, status: http.statusCode,
-                retryAfter: Double(http.value(forHTTPHeaderField: "Retry-After") ?? "") ?? 0)
+                retryAfter: TranslationFailure.retryDelay(http.value(forHTTPHeaderField: "Retry-After")))
         }
         return try parseResult(data, statusCode: (response as? HTTPURLResponse)?.statusCode ?? 0)
     }
@@ -249,7 +279,7 @@ struct GPTTranslator {
             var data = Data()
             for try await byte in bytes { data.append(byte); if data.count >= 65536 { break } }
             let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-            throw TranslationFailure.service(object, status: code, retryAfter: Double(http?.value(forHTTPHeaderField: "Retry-After") ?? "") ?? 0)
+            throw TranslationFailure.service(object, status: code, retryAfter: TranslationFailure.retryDelay(http?.value(forHTTPHeaderField: "Retry-After")))
         }
         var decoder = TranslationSSEDecoder()
         var state = TranslationStreamState()

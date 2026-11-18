@@ -36,7 +36,7 @@ If a task needs broader changes, revise its scope manually instead of bypassing 
 - [x] DI-05: Normalize duplicate and empty academic glossary lines before prompt construction.
   - Files: Sources/GPTTranslator.swift, Tests/PipelineVerify.swift
   - Acceptance: Keep the first occurrence and original term spelling; preserve the 4,000-character bound; test blank and bilingual glossary lines without changing credential handling.
-- [ ] DI-06: Parse HTTP-date Retry-After values as well as numeric seconds.
+- [x] DI-06: Parse HTTP-date Retry-After values as well as numeric seconds.
   - Files: Sources/GPTTranslator.swift, Tests/StreamVerify.swift
   - Acceptance: Shared deterministic parsing with injectable time handles future, past and invalid values; use it in both response paths.
 - [ ] DI-07: Limit accumulated SSE translation content independently of the per-line limit.
