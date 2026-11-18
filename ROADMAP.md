@@ -39,7 +39,7 @@ If a task needs broader changes, revise its scope manually instead of bypassing 
 - [x] DI-06: Parse HTTP-date Retry-After values as well as numeric seconds.
   - Files: Sources/GPTTranslator.swift, Tests/StreamVerify.swift
   - Acceptance: Shared deterministic parsing with injectable time handles future, past and invalid values; use it in both response paths.
-- [ ] DI-07: Limit accumulated SSE translation content independently of the per-line limit.
+- [x] DI-07: Limit accumulated SSE translation content independently of the per-line limit.
   - Files: Sources/GPTTranslator.swift, Tests/StreamVerify.swift
   - Acceptance: Many small deltas cannot grow text indefinitely; oversize streams fail with a sanitized typed error and regression coverage.
 - [ ] DI-08: Recover the Wispr observer after a terminal transcript-gap failure.

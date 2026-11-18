@@ -96,6 +96,39 @@ actor Updates {
                 }
             }
         }
+        // Regression: Oversized SSE stream is rejected with a sanitized, typed error
+        // Use a synthetic URLSession that delivers a [DONE] after overflowing
+        class LongLineURLProtocol: URLProtocol {
+            override class func canInit(with request: URLRequest) -> Bool { true }
+            override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+            override func startLoading() {
+                let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "text/event-stream"])!
+                client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+                // Stream 3400 CJK chars in approx 400-byte packets, then send [DONE]
+                let chunk = "汉".data(using: .utf8)!  // One char, but three bytes
+                for _ in 0..<3400 {
+                    client?.urlProtocol(self, didLoad: "data: {\"type\":\"response.output_text.delta\",\"delta\":\"汉\"}\n".data(using: .utf8)!)
+                }
+                client?.urlProtocol(self, didLoad: "data: [DONE]\n\n".data(using: .utf8)!)
+                client?.urlProtocolDidFinishLoading(self)
+            }
+            override func stopLoading() {}
+        }
+        let longcfg = URLSessionConfiguration.ephemeral
+        longcfg.protocolClasses = [LongLineURLProtocol.self]
+        let session = URLSession(configuration: longcfg)
+        defer { session.invalidateAndCancel() }
+        let gpt = GPTTranslator(key: "fake-key", model: "ignore", urlSession: session)
+        let collector = Updates()
+        var gotError = false
+        do {
+            _ = try await gpt.stream("Test SSE oversized.", context: [], glossary: "") { await collector.add($0) }
+        } catch let error as TranslationFailure {
+            gotError = true
+            // The error must be incomplete, sanitized, never echoing text content
+            check(error.kind == .incomplete && error.message.contains("内容超出预期大小"), "Oversize SSE stream throws typed/sanitized size error")
+        }
+        check(gotError, "Oversize SSE stream forcibly failed")
         var finalOnly = TranslationStreamState()
         _ = try finalOnly.accept(#"{"type":"response.completed","response":{"output":[{"type":"message","content":[{"type":"output_text","text":"最终译文"}]}]}}"#, provider: .openai)
         let finalResult = try finalOnly.result()
