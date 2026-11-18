@@ -258,6 +258,8 @@ struct GPTTranslator {
     }
     private func streamRequest(_ sentence: String, context: [TranslationPair], glossary: String,
                                update: @escaping @Sendable (String) async -> Void) async throws -> String {
+        // Independent accumulated text limit for the SSE stream
+        let maximumAccumulated = 3200  // Unicode scalar count boundary (approx 1300-1500 CJK chars/stream, but generous)
         if provider == .gemini {
             let text = try await translate(sentence, context: context, glossary: glossary)
             try Task.checkCancellation()
@@ -284,21 +286,37 @@ struct GPTTranslator {
         var decoder = TranslationSSEDecoder()
         var state = TranslationStreamState()
         var line = Data()
+        // Accumulate the full translation content so we can check the independent content limit
+        var accumulatedTextLength = 0
         for try await byte in bytes {
             try Task.checkCancellation()
             if byte == 10 {
                 if line.last == 13 { line.removeLast() }
                 let decoded = String(decoding: line, as: UTF8.self)
                 line.removeAll(keepingCapacity: true)
-                if let payload = decoder.line(decoded), let text = try state.accept(payload, provider: provider) { await update(text) }
-                if state.complete { return try state.result() }
+                if let payload = decoder.line(decoded), let text = try state.accept(payload, provider: provider) {
+                    accumulatedTextLength = text.unicodeScalars.count
+                    if accumulatedTextLength > maximumAccumulated {
+                        throw TranslationFailure(kind: .incomplete, message: "翻译内容超出预期大小，自动取消流式连接", retryAfter: 2)
+                    }
+                    await update(text)
+                }
+                if state.complete {
+                    return try state.result()
+                }
             } else {
                 line.append(byte)
                 guard line.count < 1_048_576 else { throw TranslationFailure(kind: .incomplete, message: "翻译数据超出预期大小") }
             }
         }
         if !line.isEmpty { _ = decoder.line(String(decoding: line, as: UTF8.self).trimmingCharacters(in: .newlines)) }
-        if let payload = decoder.finish(), let text = try state.accept(payload, provider: provider) { await update(text) }
+        if let payload = decoder.finish(), let text = try state.accept(payload, provider: provider) {
+            accumulatedTextLength = text.unicodeScalars.count
+            if accumulatedTextLength > maximumAccumulated {
+                throw TranslationFailure(kind: .incomplete, message: "翻译内容超出预期大小，自动取消流式连接", retryAfter: 2)
+            }
+            await update(text)
+        }
         return try state.result()
     }
 

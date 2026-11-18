@@ -111,3 +111,8 @@ This entry describes the imported prototype, not a published or notarized releas
 
 - Improve sentence splitting around academic abbreviations and decimal numbers.
 - Ubuntu portable checks passed; native Swift build/tests NOT run. Completed under the configured automatic portable-only policy.
+
+## 2026-11-18 — DI-07
+
+- Limit accumulated SSE translation content independently of the per-line limit.
+- Ubuntu portable checks passed; native Swift build/tests NOT run. Completed under the configured automatic portable-only policy.
