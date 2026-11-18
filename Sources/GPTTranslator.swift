@@ -168,7 +168,7 @@ struct GPTTranslator {
     static func requestBody(sentence: String, context: [TranslationPair], glossary: String, model: String) -> [String: Any] {
         let payload: [String: Any] = [
             "previous_sentences": context.suffix(4).map { ["english": $0.english, "chinese": $0.chinese] },
-            "course_terms": String(glossary.prefix(4000)),
+            "course_terms": CourseVocabulary.normalize(glossary),
             "current_sentence": sentence
         ]
         let input = String(data: try! JSONSerialization.data(withJSONObject: payload), encoding: .utf8)!

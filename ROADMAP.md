@@ -33,7 +33,7 @@ If a task needs broader changes, revise its scope manually instead of bypassing 
 - [x] DI-04: Improve sentence splitting around academic abbreviations and decimal numbers.
   - Files: Sources/SentenceFeed.swift, Tests/PipelineVerify.swift
   - Acceptance: Fixtures for e.g., i.e., Dr., decimal measurements and sentence-ending punctuation keep useful caption boundaries.
-- [ ] DI-05: Normalize duplicate and empty academic glossary lines before prompt construction.
+- [x] DI-05: Normalize duplicate and empty academic glossary lines before prompt construction.
   - Files: Sources/GPTTranslator.swift, Tests/PipelineVerify.swift
   - Acceptance: Keep the first occurrence and original term spelling; preserve the 4,000-character bound; test blank and bilingual glossary lines without changing credential handling.
 - [ ] DI-06: Parse HTTP-date Retry-After values as well as numeric seconds.

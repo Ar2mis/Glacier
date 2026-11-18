@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### DI-05: Consistent course glossary prompts (2026-11-17)
+- Reuse GlacierCore's course vocabulary normalization for OpenAI, Gemini and DeepSeek translation prompts: trim empty lines, remove case-insensitive duplicates and preserve the first term's spelling and bilingual mapping.
+- Apply the 4,000-character limit after deduplication, including newline separators, without cutting a technical term in half.
+- Add native pipeline regression coverage for repeated, blank, bilingual and over-limit glossaries, idempotence and all three provider request bodies. Verification: native pipeline suite, portable checks and daily workflow guard.
+
 ### Reduce Chinese translation head-of-line delay (2026-11-16)
 - The owner confirmed that 0.6.4 made English noticeably faster, while Chinese still lagged. This follow-up targets translation scheduling without changing ASR models or discarding the full lecture transcript.
 - Request Chinese before cleaned English using an explicit instruction, required-field order and deterministic JSON schema serialization. Retain strict completion validation and the existing conservative glossary/negation rules.

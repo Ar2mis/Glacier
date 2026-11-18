@@ -148,6 +148,34 @@ struct PipelineVerify {
         let input = try JSONSerialization.jsonObject(with: Data((body["input"] as! String).utf8)) as! [String: Any]
         precondition((input["previous_sentences"] as! [[String: String]]).count == 4)
         precondition(input["current_sentence"] as? String == "Current sentence.")
+        func promptedGlossary(_ glossary: String) throws -> String {
+            let body = GPTTranslator.requestBody(sentence: "Current sentence.", context: [], glossary: glossary, model: "fixture")
+            let payload = try JSONSerialization.jsonObject(with: Data((body["input"] as! String).utf8)) as! [String: Any]
+            return payload["course_terms"] as! String
+        }
+        let glossary = "\n  BIOG 1440  \r\n\t\n osmosis = 渗透作用 \nBIOG 1440\nOSMOSIS = 渗透作用\nProf. Levine\nprof. levine\n水通道蛋白 = aquaporin\n"
+        let normalized = try promptedGlossary(glossary)
+        precondition(normalized == "BIOG 1440\nosmosis = 渗透作用\nProf. Levine\n水通道蛋白 = aquaporin", "Keep first spelling and bilingual terms, remove blank/case-insensitive duplicates")
+        let normalizedAgain = try promptedGlossary(normalized)
+        let blank = try promptedGlossary(" \r\n\t\n ")
+        precondition(normalizedAgain == normalized, "Normalization is idempotent")
+        precondition(blank.isEmpty)
+        let exactLimit = String(repeating: "词", count: 3998) + "\nA"
+        let bounded = try promptedGlossary(exactLimit + "\nB")
+        let oversizedTerm = try promptedGlossary(String(repeating: "词", count: 4001))
+        precondition(bounded == exactLimit, "The 4,000-character bound includes separators and retains whole terms")
+        precondition(oversizedTerm.isEmpty, "Never send a truncated technical term")
+        let repeatedTerm = String(repeating: "osmosis = 渗透作用\n", count: 400) + "aquaporin = 水通道蛋白"
+        let deduplicated = try promptedGlossary(repeatedTerm)
+        precondition(deduplicated == "osmosis = 渗透作用\naquaporin = 水通道蛋白", "Deduplicate before applying the bound so repetition cannot crowd out later terms")
+        for provider in AIProvider.allCases {
+            let client = GPTTranslator(key: "fixture", model: "fixture", provider: provider)
+            let request = client.adapt(GPTTranslator.requestBody(sentence: "Current sentence.", context: [], glossary: glossary, model: "fixture"))
+            let content = provider == .openai ? request["input"] as! String : (request["messages"] as! [[String: String]])[1]["content"]!
+            let payload = try JSONSerialization.jsonObject(with: Data(content.utf8)) as! [String: Any]
+            precondition(payload["course_terms"] as? String == normalized, "All translation providers receive the normalized glossary")
+        }
+        print("PASS: glossary blank/duplicate removal, first spelling, bilingual terms, whole-term bounds and all provider request bodies")
         for code in [401, 403, 404, 429, 500] {
             do { _ = try GPTTranslator.parse(Data(), statusCode: code); fatalError("HTTP failure was accepted") }
             catch {}
