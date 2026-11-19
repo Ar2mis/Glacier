@@ -14,10 +14,13 @@ If a task needs broader changes, revise its scope manually instead of bypassing 
 - [x] CORE-02: Add bounded microphone capture and selectable WhisperKit, Apple SFSpeechRecognizer, OpenAI chunked ASR and Deepgram streaming adapters; retain Mac Wispr/SpeechAnalyzer paths.
 - [x] CORE-03: Add TranscriptRefiner for one OpenAI request returning cleaned English and Chinese, with editable course vocabulary, bounded context and retained raw ASR.
 - [x] CORE-04: Wire shared providers into the Mac settings and add an iOS foreground captioning target and simulator build check.
-- [ ] CORE-05: Measure real microphone latency, academic word error rate, cleanup meaning preservation and iPhone memory/thermal behavior for Base versus Turbo.
+- [ ] CORE-05: Measure real microphone latency, academic word error rate, cleanup meaning preservation and iPhone memory/thermal behavior for Parakeet EOU versus WhisperKit Base/Turbo. Paced file replay is implemented; classroom and iPhone acceptance remain open.
 - [x] CORE-06: Persist full independent-ASR lecture transcripts, drain WhisperKit audio on Stop, and export complete bilingual Word study notes without Wispr on Mac and iOS.
 - [ ] CORE-07: Add model download progress/retry/offline management, interruption/route-change recovery and on-device UI tests.
 - [ ] CORE-08: Add provider-specific graceful finalization for Apple/OpenAI/Deepgram; currently their saved transcripts explicitly warn about potentially unfinished audio.
+
+- [x] CORE-09: Integrate pinned FluidAudio Parakeet EOU on Mac/iOS with bounded incremental decoding, graceful Stop, shared lecture journaling/export, and reproducible same-audio paced comparison against WhisperKit.
+- [x] CORE-10: Default new translation settings to GPT and retain slow successful requests beyond 2.5 seconds; retain visible Apple fallback for actual failures and missing credentials, with regression coverage.
 
 ## Daily bounded improvements
 

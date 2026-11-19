@@ -5,8 +5,8 @@
 > sandboxed store edition, `GlacierMacDev` for development, and `GlacierIOS` for
 > the iOS 18+ foreground edition. See [the signing/Archive guide](docs/MAC_APP_STORE_RELEASE.md).
 > Shell/nightly builds now produce **Glacier Dev.app**, isolated from official
-> Glacier.app. Store builds disable Wispr automation, default to Apple on-device
-> translation, and require explicit consent for optional cloud requests. Initial
+> Glacier.app. Store builds disable Wispr automation. Fresh installs select
+> Parakeet and GPT; cloud requests still require a key and explicit consent. Initial
 > model/language downloads require internet; this is not yet an approved release.
 > Word export uses a user-selected folder. A key-free English-only Word exporter
 > is available; generative bilingual study notes still require a cloud key/consent.
@@ -22,12 +22,24 @@ package `GlacierCore`; the system-wide overlay and Wispr integration remain Mac 
 
 ## What works in the implementation
 
-- **Independent speech input:** WhisperKit 1.1.1 is the default for fresh installs.
-  Choose multilingual Base or Large v3 Turbo. Models download/cache on first use;
-  microphone audio is then decoded on device, without Wispr. Existing Mac input
-  preferences are preserved. Bounded 16 kHz audio windows publish partial English
+- **Independent speech input:** Parakeet EOU 320ms is the default for fresh installs.
+  Models download/cache on first use; microphone audio is then decoded on device,
+  without Wispr. Existing saved input preferences are preserved.
+- **WhisperKit option:** WhisperKit 1.1.1 offers Base and Large v3 Turbo.
+  Its bounded 16 kHz audio windows publish partial English
   after about 0.75 seconds of new audio and finalize on silence or an eight-second
   boundary. These are scheduling thresholds, not measured latency guarantees.
+- **Parakeet EOU streaming:** FluidAudio 0.18.3 provides the default local English
+  provider on Mac/iOS. It offers 320ms (default) and 160ms EOU models,
+  a 480ms end-of-utterance debounce plus a recent-input-silence guard,
+  incremental partials, and bounded 60-second decoder sessions. Stop drains queued
+  PCM and model lookahead before finalizing the journal. Models are pinned to an
+  immutable Hugging Face revision and cached in the app's Application Support
+  directory. First-use preparation finishes before microphone capture begins;
+  prepare in Settings before class. Raw EOU output has no punctuation/case;
+  course vocabulary is applied by GPT cleanup, not the EOU decoder. WhisperKit
+  remains selectable, and existing saved provider preferences are preserved.
+  Broader classroom evaluation remains open. See [paced comparison](docs/ASR_COMPARISON.md).
 - **Selectable alternatives:** on-device Apple `SFSpeechRecognizer`, OpenAI audio
   uploads in up-to-three-second chunks, or Deepgram WebSocket streaming. The Mac
   also retains Apple `SpeechAnalyzer` and Wispr input. Cloud speech is an explicit
@@ -37,16 +49,17 @@ package `GlacierCore`; the system-wide overlay and Wispr integration remain Mac 
   in one request. Course Vocabulary / Glossary supplies names and academic terms.
   It preserves meaning and raw source, limits context to four pairs and glossary
   to 4,000 characters, and avoids blindly deleting meaningful words like “like.”
-  Raw partial text appears before cleanup completes. Mac WhisperKit begins translating
+  Raw partial text appears before cleanup completes. Mac and iOS independent ASR begin translating
   stable prefixes agreed by successive hypotheses, rather than waiting for the final
   silence boundary. Final ASR still replaces the complete stored utterance. Other
-  providers/mobile cleanup use final utterances; Wispr coalesces revisions.
+  Wispr coalesces revisions.
 - **Wispr live captions:** observe an existing Wispr Flow Notetaker transcript through
   macOS Accessibility; segment and coalesce revisions before translation.
 - **Translation:** OpenAI Responses API, Gemini's OpenAI-compatible endpoint, or
   DeepSeek. OpenAI/DeepSeek use streamed text; Gemini uses complete responses.
-  Installed Apple English–Chinese translation can serve as an explicit option or
-  an automatic fallback when a key is missing or the first cloud request fails.
+  GPT is the new-install default (OpenAI cleanup uses gpt-4o-mini); a slow first
+  token never triggers the former 2.5-second fallback. Installed Apple English–Chinese translation can serve as an explicit option or
+  an automatic fallback when a key is missing or a cloud request actually fails, with a visible reason.
   Installed language packs initialize automatically on launch; unavailable packs
   produce a visible download/retry message instead of silently dropping Chinese.
 - **Desktop UI:** a draggable ice-cube launcher, confirmed start/stop indicators,
@@ -59,7 +72,7 @@ package `GlacierCore`; the system-wide overlay and Wispr integration remain Mac 
   translated result within its window, and independent lecture journals retain raw ASR.
 - **Complete lecture storage:** GlacierCore speech sessions persist every utterance
   outside the short live-caption history. Partial revisions replace the same
-  utterance; finalized text is preserved. WhisperKit Stop closes microphone input,
+  utterance; finalized text is preserved. WhisperKit and Parakeet Stop close microphone input,
   drains queued PCM and resampler output, decodes residual speech, and waits for the
   transcript writer before starting the archive. The overlay hides immediately;
   a new recording waits until finalization completes.
@@ -80,7 +93,7 @@ package `GlacierCore`; the system-wide overlay and Wispr integration remain Mac 
 only required for Wispr mode and must be installed/signed in separately. Glacier
 does not embed Wispr or copy VoiceInk's implementation. The iOS target is a
 foreground captioning preview: no system-wide overlay. Keep Glacier open while
-Word export finishes; iOS may suspend background work. WhisperKit guarantees the
+Word export finishes; iOS may suspend background work. WhisperKit and Parakeet guarantee the
 implemented graceful Stop path; Apple/OpenAI/Deepgram adapters currently retain
 available text with a finalization warning rather than guaranteeing final audio
 flushing. Crashes/power loss cannot recover audio that had not yet been recognized.
@@ -96,7 +109,8 @@ mobile thermals, real lecture latency and provider availability need live testin
 - Python 3.9+ for repository automation/tests (CI uses Python 3.12).
 - Wispr Flow only for Wispr input mode, and a provider API key for cloud
   translation/AI note generation. Apple translation needs installed language assets.
-- SwiftPM resolves pinned WhisperKit (Argmax) and its package graph on first build.
+- Swift 6.2+ / Xcode 26+ resolves pinned WhisperKit and FluidAudio on first build.
+  FluidAudio TTS/diarizer/NeMo traits are disabled; they are not linked into Glacier.
   `Package.resolved` is committed; model weights are downloaded at runtime, never
   committed. No Python packages or `npm install` are required.
 
@@ -114,8 +128,10 @@ so macOS may require reauthorizing the new build even when the old toggle is on.
 Stable signing/notarization is still future work. Apple's microphone input mode
 requires microphone permission and speech assets.
 
-For a fresh store session, select **WhisperKit → Base** and **Apple on-device
-translation**; neither needs an API key. Use **Prepare speech model (no recording)**
+For a fresh session, select **Parakeet EOU** or **WhisperKit → Base**.
+Translation defaults to **GPT**: save your OpenAI key and explicitly allow text
+sharing in the Store edition. **Apple on-device translation** remains the key-free
+alternative; choose it explicitly for offline use. Use **Prepare speech model (no recording)**
 and **Prepare Apple Translation** while online before your first lecture. Turbo
 remains available for higher-memory devices, and the development app retains its
 previous model choice. Initial Core ML compilation can take minutes. Preparation
@@ -132,7 +148,7 @@ bypass the remote model-list request. Store assets live in the sandbox's
 Application Support/Glacier/Models; Dev uses Application Support/Glacier Dev/Models.
 Legacy Documents caches are supported only outside the store edition. The Mac
 retains a prepared adapter between sessions with unchanged model/glossary. iOS
-uses Apple bilingual translation by default; optional OpenAI cleanup requires a
+defaults to GPT bilingual cleanup; OpenAI requests require a
 key and explicit text-sharing consent.
 
 Live follow is now the default: stable prefixes can translate after two agreeing ASR hypotheses, GPT cleanup requests Chinese first and streams bilingual JSON fields as they arrive, and ready pairs do not wait in the reading queue. Live cloud translation overlaps at most two requests, with at least 800 ms between starts, so a slow previous response does not hold up every newer Chinese caption. Responses can finish out of order; older results are retained in history but cannot rewind the displayed Chinese. Apple translation and reading priority remain serial. Live follow selects the newest ready source rather than translating every stale pending sentence. Skipped live requests retain their English history; full bilingual lecture export uses the complete journal. Reading priority retains ordered live requests. Capitalization/punctuation-only ASR edits do not restart word stability. English no longer waits for stable-prefix confirmation or GPT: raw recognition drafts appear immediately. The previous Chinese remains with a catching-up indicator until useful new Chinese arrives; a late translation cannot rewind the current English. No caption expires into a blank. Enable **阅读优先** to restore the adjustable 2–12-second dwell; this intentionally trades latency for reading time. Raw final utterances still go to the full lecture journal. Inference consumes the latest pending partial (approximately 0.75-second audio cadence) while separately retaining final audio windows; slow inference cannot build a queue of superseded prefixes. At most 64 pending final windows plus one latest partial are buffered (about 33 MB of 16 kHz Float PCM at full eight-second windows). Overload is bounded and reported rather than silently discarding final audio. This volatile startup buffer does not survive crashes; finalized transcripts are durably journaled.
@@ -188,7 +204,7 @@ bash scripts/verify-ios.sh   # unsigned generic iOS Simulator build, full Xcode 
 ## Architecture
 
 ```text
-GlacierCore: microphone → bounded PCM → WhisperKit / Apple Speech / cloud ASR
+GlacierCore: microphone → bounded PCM → Parakeet EOU / WhisperKit / Apple Speech / cloud ASR
                                     → partial English + finalized utterances
                                     → TranscriptRefiner → cleaned English + Chinese
                                     → Mac overlay / iOS caption view
@@ -200,7 +216,7 @@ Apple microphone → AudioBridge → SpeechAnalyzer ────┘
                          → selected cloud service / installed Apple Translation
                          → CaptionModel → SwiftUI/AppKit overlay + recent history
 
-WhisperKit Stop → drain audio → finalize utterance → durable full transcript ─┐
+WhisperKit / Parakeet Stop → drain audio → finalize utterance → durable full transcript ─┐
 Stopped Wispr recording → full transcript copy ──────────────────────────────┘
                          → resumable archive job
                          → chunk translation + AI digest → OOXML Word document
@@ -208,7 +224,7 @@ Stopped Wispr recording → full transcript copy ──────────�
 
 | Component | Responsibility |
 | --- | --- |
-| `Package.swift`, `Core/` | Shared speech provider contract, bounded microphone capture, WhisperKit, Apple/cloud adapters, one-pass refiner and shared credential persistence |
+| `Package.swift`, `Core/` | Shared speech provider contract, bounded microphone capture, Parakeet EOU, WhisperKit, Apple/cloud adapters, one-pass refiner and shared credential persistence |
 | `iOS/GlacierMobileApp.swift`, `Glacier.xcodeproj` | Foreground iOS captions, vocabulary/provider settings, cancellation and bounded cleanup queue |
 | `Sources/App.swift` | Main-actor observable state, session lifecycle, translation tasks and AppKit panels |
 | `Sources/WisprCapture.swift` | Accessibility reader actor, recording controls and transcript polling |
@@ -245,7 +261,7 @@ needed on iOS.
   these common locations and formats; it is not a substitute for reviewing diffs.
 - Live translation sends the current sentence, up to four recent bilingual context
   pairs and glossary text to the selected provider. Archive generation sends the
-  full transcript in chunks. WhisperKit/Apple recognition is local; explicitly
+  full transcript in chunks. Parakeet/WhisperKit/Apple recognition is local; explicitly
   selected OpenAI/Deepgram ASR sends microphone audio. Bilingual cleanup sends
   text to OpenAI even when recognition is local. Wispr handles its own data flow.
 - OpenAI requests use `store: false`; this is not a claim of zero provider retention.
@@ -456,9 +472,10 @@ an OS denial of repository access can be logged.
 
 The reading buffer has deterministic clock tests and native session regressions
 for fast successive translations, growing ASR partials, preserved Chinese, and
-Stop cancellation. A short synthetic biology recording was transcribed by Turbo
-on the development Mac in about 1.7–2.5 seconds after loading. It still misspelled
-"aquaporins"; a real GPT-4o mini cleanup request corrected it and preserved the
-meaning of equilibrium/net movement in Chinese in about 1.8 seconds. These are
-small clean-audio smoke tests, not a classroom word-error-rate or noisy-microphone
-benchmark. Course terminology, microphone distance, and room noise still matter.
+Stop cancellation. The [November 18 same-audio comparison](docs/ASR_COMPARISON.md)
+measures Parakeet EOU and WhisperKit Base/Turbo with public human speech and a
+synthetic biology fixture. It also records an actual Parakeet → GPT integration
+probe. Parakeet provides earlier partial text in these samples; Turbo retains
+better academic word accuracy on the biology fixture. These are small paced-file
+replays, not classroom or noisy-microphone benchmarks. Course terminology,
+microphone distance, room noise and iPhone thermal behavior still need evaluation.

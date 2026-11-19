@@ -40,6 +40,8 @@ actor ConcurrentCalls {
 @main enum SessionVerify {
     @MainActor static func main() async throws {
         let savedMode = UserDefaults.standard.object(forKey: "translationMode")
+        UserDefaults.standard.removeObject(forKey: "translationMode")
+        precondition(CaptionModel(simulation: true).translationMode == "gpt", "Fresh settings must default to GPT")
         UserDefaults.standard.set("gpt", forKey: "translationMode") // This suite injects cloud operations.
         defer { if let savedMode { UserDefaults.standard.set(savedMode, forKey: "translationMode") } else { UserDefaults.standard.removeObject(forKey: "translationMode") } }
         var passed = [String]()
@@ -179,14 +181,14 @@ actor ConcurrentCalls {
         let fixture = FinalizingSpeechFixture()
         var starts = 0
         let independent = CaptionModel(simulation: true, archive: archive, coreFactory: { _, _, _ in starts += 1; return fixture }, operation: { source, _, _, _ in "译文：" + source })
-        independent.inputMode = "whisperkit"; independent.translationMode = "gpt"
+        independent.inputMode = SpeechProvider.parakeet.rawValue; independent.translationMode = "gpt"
         independent.autoArchive = true; independent.courseName = "Stop regression"
         independent.start()
         await waitUntil("independent capture started") { independent.running && independent.english == "The last draft" }
         independent.stop(); independent.stop(); independent.start()
         check(independent.drainingCore && !independent.visible && starts == 1, "Stop hides captions and prevents restart until final audio is saved")
         await waitUntil("independent lecture exported without Wispr") { !independent.busy && archive.lastURL != nil }
-        check(fixture.finishCalls == 1, "repeated Stop finalizes exactly once")
+        check(fixture.finishCalls == 1, "Parakeet route finalizes exactly once after repeated Stop")
         let sessions = try FileManager.default.contentsOfDirectory(at: temporary.appendingPathComponent("lectures"), includingPropertiesForKeys: nil)
         let id = UUID(uuidString: sessions.first!.lastPathComponent)!
         let savedEnglish = try await lectures.english(id)
@@ -337,14 +339,20 @@ actor ConcurrentCalls {
         await waitUntil("startup failure visible at ice") { !startupError.isEmpty }
         check(startupError.contains("无法开始") && !starting.running && !starting.preparingCapture, "startup failures are surfaced without opening Settings or falsely recording")
 
-        let slowCloud = CaptionModel(simulation: true, localTranslation: { "本机接替：" + $0 }, operation: { source, _, _, _ in
-            try await Task.sleep(for: .seconds(15)); return "late " + source
+        let localSlowCalls = Calls()
+        let slowCloud = CaptionModel(simulation: true, localTranslation: { source in
+            _ = await localSlowCalls.record(source); return "Unexpected Apple result"
+        }, operation: { source, _, _, update in
+            try await Task.sleep(for: .seconds(3.3))
+            await update("GPT 首字")
+            return "GPT: " + source
         })
         slowCloud.translationMode = "gpt"
-        let began = Date()
-        slowCloud.receive(snapshot("Cloud first token never arrives."))
-        await waitUntil("slow first-token fallback") { slowCloud.chinese == "本机接替：Cloud first token never arrives." }
-        check(Date().timeIntervalSince(began) < 5, "installed Apple fallback bypasses a stalled first cloud token")
+        slowCloud.receive(snapshot("A slow GPT response must remain GPT."))
+        await wait(2.8)
+        check(await localSlowCalls.count() == 0 && !slowCloud.activeTranslationEngine.contains("Apple"), "2.5 seconds without Chinese never changes the selected cloud engine")
+        await waitUntil("slow GPT completes") { slowCloud.chinese == "GPT: A slow GPT response must remain GPT." }
+        check(await localSlowCalls.count() == 0, "slow successful GPT response is displayed without local fallback")
         slowCloud.receive(snapshot("", active: false))
 
         let report: [String: Any] = ["tested_at": ISO8601DateFormatter().string(from: Date()), "microphone_used": false,

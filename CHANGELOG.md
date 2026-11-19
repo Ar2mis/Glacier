@@ -1,6 +1,35 @@
 # Changelog
 
 
+## 2026-11-18 — Parakeet streaming and GPT-first captions (0.7.1 / 13)
+
+- Added pinned FluidAudio 0.18.3 and pinned Parakeet EOU Core ML assets to
+  GlacierCore; Mac/iOS offer 320ms and 160ms modes alongside WhisperKit, Apple
+  Speech and cloud providers. Fresh settings select Parakeet 320ms and GPT;
+  existing saved choices are preserved.
+- Warmed deferred inference before microphone capture, guarded delayed EOU
+  boundaries against newly started speech, bounded decoder/token history, and
+  drained audio/model lookahead into the existing full-lecture journal on Stop.
+- Removed the 2.5-second first-Chinese-token switch to Apple. Slow successful GPT
+  requests continue; genuine errors/missing setup retain visible fallback. iOS
+  now identifies the active translation engine and explains fallback reasons.
+- Added model-free EOU/cancellation/Stop regressions, a paced same-file ASR
+  comparison CLI and an opt-in real Parakeet → Mac CaptionModel → GPT probe.
+  Updated native standalone test flags for transitive C modules and SDK/model
+  attribution, privacy/support pages and setup instructions.
+- Measured on M5: on a 22.416s synthetic biology clip, Parakeet 320ms first text
+  0.834s / WER 7.5%; WhisperKit Base 1.708s / 37.7%; Turbo 2.200s / 0.0%.
+  All three scored 0/22 word edits on the separate public human-speech fixture.
+  These are small paced-replay samples, not classroom or iPhone guarantees;
+  detailed method, limitations and reproduction steps are in docs/ASR_COMPARISON.md.
+- Real GPT integration produced streamed Chinese without Apple fallback, saved
+  complete raw English and hid captions on Stop. Native sandbox model download,
+  storage and real inference also passed. Full local verification passed: 36
+  Python tests, 36 streaming checks, 43 session simulations, Core/caption/soak
+  checks, full/offline Word readers, APP_STORE compilation and signed sandbox
+  storage/entitlement checks. Hosted Xcode target builds remain a separate gate.
+
+
 ## 2026-11-18 — Mac App Store preparation (0.7.0 / 12)
 
 - Added native sandboxed GlacierMac and isolated GlacierMacDev targets, configurable

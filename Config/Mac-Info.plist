@@ -23,7 +23,7 @@
 	<key>GlacierDistribution</key>
 	<string>$(GLACIER_DISTRIBUTION)</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Glacier captures lecture audio for captions. WhisperKit and Apple Speech process it on device. Optional cloud audio providers require your separate consent.</string>
+	<string>Glacier captures lecture audio for captions. Parakeet, WhisperKit and Apple Speech process it on device. Optional cloud audio providers require your separate consent.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Recognize English speech on this device when you select Apple Speech.</string>
 	<key>LSMinimumSystemVersion</key>

@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.."
 python3 scripts/check_store_release.py
 swift build -c release
 CORE_BIN=$(swift build -c release --show-bin-path)
+source scripts/swift_core_flags.sh
 # The fallback compiles the exact APP_STORE source branch with the installed Mac
 # SDK, then tests an ad-hoc sandbox bundle. It does NOT validate an Xcode Archive.
 if xcodebuild -version >/dev/null 2>&1; then
@@ -15,13 +16,13 @@ else
   APP="$PWD/.build/store-smoke/Glacier.app"
   mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
   swiftc -swift-version 5 -D APP_STORE -O -parse-as-library -target arm64-apple-macos26.0 \
-    -I "$CORE_BIN" -I "$CORE_BIN/Modules" -L "$CORE_BIN" -lGlacierCore Sources/*.swift \
+    "${GLACIER_CORE_FLAGS[@]}" Sources/*.swift \
     -o "$APP/Contents/MacOS/Glacier" -framework AppKit -framework SwiftUI -framework Speech -framework AVFoundation -framework Translation
   python3 - "$APP" <<'PY'
 import sys,plistlib
 from pathlib import Path
 p=plistlib.loads(Path('Config/Mac-Info.plist').read_bytes())
-p.update(CFBundleExecutable='Glacier',CFBundleIdentifier='com.ziruochen.glacier',CFBundleName='Glacier',CFBundleDisplayName='Glacier',CFBundleShortVersionString='0.7.0',CFBundleVersion='12',LSMinimumSystemVersion='26.0',GlacierDistribution='store')
+p.update(CFBundleExecutable='Glacier',CFBundleIdentifier='com.ziruochen.glacier',CFBundleName='Glacier',CFBundleDisplayName='Glacier',CFBundleShortVersionString='0.7.1',CFBundleVersion='13',LSMinimumSystemVersion='26.0',GlacierDistribution='store')
 Path(sys.argv[1],'Contents/Info.plist').write_bytes(plistlib.dumps(p))
 PY
   cp PRIVACY_POLICY.md SUPPORT.md THIRD_PARTY_NOTICES.txt Resources/PrivacyInfo.xcprivacy "$APP/Contents/Resources/"

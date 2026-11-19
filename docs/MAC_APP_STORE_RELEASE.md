@@ -114,7 +114,7 @@ real public contact channel before submission. Never invent a support email.
 
 Describe the ice-cube Start/Stop control, menu-bar Settings, transparent click-through
 caption window, model downloads, and user-selected export folder. Explain that
-WhisperKit + Apple translation need no developer-provided key; optional cloud AI
+Parakeet/WhisperKit + Apple translation need no developer-provided key; optional cloud AI
 uses the reviewer's own key/consent and incurs provider fees. Full generative study
 notes require cloud access. The offline English Word export is available without it.
 If Apple requires access to optional cloud features, arrange a limited review

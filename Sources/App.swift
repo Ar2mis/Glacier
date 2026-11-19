@@ -78,11 +78,14 @@ final class CaptionModel: ObservableObject {
     }
     @Published var translationConfig: TranslationSession.Configuration?
     @Published var translationReady = false
-    @Published var inputMode = UserDefaults.standard.string(forKey: "inputMode") ?? "whisperkit" {
+    @Published var inputMode = UserDefaults.standard.string(forKey: "inputMode") ?? SpeechProvider.parakeet.rawValue {
         didSet { UserDefaults.standard.set(inputMode, forKey: "inputMode") }
     }
     @Published var whisperModel = WhisperModel(rawValue: UserDefaults.standard.string(forKey: "whisperModel") ?? "") ?? (AppDistribution.isStore ? .base : .turbo) {
         didSet { UserDefaults.standard.set(whisperModel.rawValue, forKey: "whisperModel") }
+    }
+    @Published var parakeetMode = ParakeetMode(rawValue: UserDefaults.standard.string(forKey: "parakeetMode") ?? "") ?? .balanced320 {
+        didSet { UserDefaults.standard.set(parakeetMode.rawValue, forKey: "parakeetMode") }
     }
     @Published var refineEnabled = (UserDefaults.standard.object(forKey: "refineEnabled") as? Bool) ?? true {
         didSet { UserDefaults.standard.set(refineEnabled, forKey: "refineEnabled") }
@@ -91,7 +94,7 @@ final class CaptionModel: ObservableObject {
         didSet { UserDefaults.standard.set(refineModel, forKey: "refineModel") }
     }
     @Published var speechKeyDraft = ""
-    @Published var translationMode = UserDefaults.standard.string(forKey: "translationMode") ?? "apple" {
+    @Published var translationMode = UserDefaults.standard.string(forKey: "translationMode") ?? "gpt" {
         didSet { UserDefaults.standard.set(translationMode, forKey: "translationMode") }
     }
     @Published var provider = AIProvider(rawValue: UserDefaults.standard.string(forKey: "aiProvider") ?? "openai") ?? .openai {
@@ -135,6 +138,7 @@ final class CaptionModel: ObservableObject {
     var layoutChanged: (() -> Void)?
     private let capture = SpeechCapture()
     private var coreCapture: (any StreamingTranscriber)?
+    private var cachedParakeet: (mode: ParakeetMode, capture: ParakeetTranscriber)?
     private var cachedWhisper: (model: WhisperModel, glossary: String, capture: WhisperTranscriber)?
     private var coreTask: Task<Void, Never>?
     private var coreFinishTask: Task<Void, Never>?
@@ -447,13 +451,18 @@ final class CaptionModel: ObservableObject {
         startTask = Task {
             defer { if generation == token { busy = false; preparingCapture = false; startTask = nil } }
             do {
-                try await whisperAdapter().prepare()
+                if inputMode == SpeechProvider.parakeet.rawValue { try await parakeetAdapter().prepare() }
+                else { try await whisperAdapter().prepare() }
                 try Task.checkCancellation()
                 if generation == token { status = "语音模型已就绪 · 点击开始收音" }
             } catch {
                 if generation == token { status = error.localizedDescription }
             }
         }
+    }
+    private func parakeetAdapter() -> ParakeetTranscriber {
+        if cachedParakeet?.mode != parakeetMode { cachedParakeet = (parakeetMode, ParakeetTranscriber(mode: parakeetMode)) }
+        return cachedParakeet!.capture
     }
     private func whisperAdapter() -> WhisperTranscriber {
         if cachedWhisper?.model != whisperModel || cachedWhisper?.glossary != glossary {
@@ -485,6 +494,7 @@ final class CaptionModel: ObservableObject {
                 let capture: any StreamingTranscriber
                 if let coreFactory { capture = coreFactory(provider, whisperModel, key) }
                 else if provider == .whisperKit { capture = whisperAdapter() }
+                else if provider == .parakeet { capture = parakeetAdapter() }
                 else { capture = TranscriberFactory.make(provider: provider, model: whisperModel, key: key, vocabulary: glossary) }
                 coreCapture = capture
                 let events = try await capture.start { [weak self] text in
@@ -704,21 +714,9 @@ final class CaptionModel: ObservableObject {
                 sequence += 1; let requestSequence = sequence
                 nextStart = Date().addingTimeInterval(0.8)
                 let request = Task {
-                    var receivedChinese = false
-                    let fallbackWatchdog = Task {
-                        do { try await Task.sleep(for: .milliseconds(2500)) } catch { return }
-                        guard !requestUsesLocal, !receivedChinese, generation == token,
-                              translationEpoch == epoch, running,
-                              await ensureLocalTranslation(requestDownload: false) else { return }
-                        guard !Task.isCancelled, !receivedChinese, generation == token, translationEpoch == epoch else { return }
-                        useLocal = true; fallbackReason = "云端首字等待超过 2.5 秒"
-                        activeTranslationEngine = "Apple 本机翻译 · 云端响应较慢"
-                        for pending in translationRequests.values {
-                            pending.task.cancel(); liveBuffer.retry(pending.job)
-                        }
-                        translationRequests.removeAll()
-                    }
-                    defer { fallbackWatchdog.cancel(); translationRequests[requestID] = nil }
+                    // A slow first token is not a service failure. Keep GPT selected;
+                    // genuine request errors still use the explicit local fallback below.
+                    defer { translationRequests[requestID] = nil }
                     do {
                         let translated: String
                         var refined: BilingualCaption?
@@ -727,7 +725,6 @@ final class CaptionModel: ObservableObject {
                             await MainActor.run {
                                 guard owner.generation == token, owner.translationEpoch == epoch, !Task.isCancelled,
                                       owner.running, owner.translationRequests[requestID] != nil else { return }
-                                if !text.isEmpty { receivedChinese = true }
                                 owner.showTranslation(text, job: job, complete: false, sequence: requestSequence)
                             }
                         }
@@ -744,7 +741,6 @@ final class CaptionModel: ObservableObject {
                                     await MainActor.run {
                                         guard owner.generation == token, owner.translationEpoch == epoch, owner.running,
                                               !Task.isCancelled, owner.translationRequests[requestID] != nil else { return }
-                                        if !pair.chinese.isEmpty { receivedChinese = true }
                                         owner.showTranslation(pair.chinese, job: job, complete: false, cleanedEnglish: pair.english, sequence: requestSequence)
                                     }
                                 })
@@ -1022,7 +1018,7 @@ struct SettingsView: View {
             Divider()
             Text("底部字幕完全穿透点击，不拦截下方按钮。通过设置或菜单栏回看最近 30 秒，回看窗口可拖动。关闭设置后，菜单栏的字幕图标仍可控制应用。")
                 .font(.callout).foregroundStyle(.secondary)
-            Text("WhisperKit 与 Apple 本机处理语音。选择云服务并同意后，音频或文字、最近上下文和课程术语会发送到该服务。Mac API key 保存在应用自己的私有配置中（明文、仅当前用户可读）；商店版位于沙盒容器内，更新不会覆盖。")
+            Text("Parakeet、WhisperKit 与 Apple 本机处理语音。选择云服务并同意后，音频或文字、最近上下文和课程术语会发送到该服务。Mac API key 保存在应用自己的私有配置中（明文、仅当前用户可读）；商店版位于沙盒容器内，更新不会覆盖。")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding(26)
@@ -1049,7 +1045,15 @@ struct SettingsView: View {
                     ForEach(WhisperModel.allCases) { Text($0.title).tag($0) }
                 }.disabled(model.running || model.busy)
                 Button("下载 / 准备语音模型（不录音）") { model.prepareSpeechModel() }.disabled(model.running || model.busy)
-                Text("商店版默认 Base，适合快速启动；Turbo 更大。首次使用需联网下载并准备模型，之后可离线使用。课程术语也会提供给本机识别器。")
+                Text("Base 较小，适合快速准备；Turbo 更大。首次使用需联网下载并准备模型，之后可离线使用。课程术语也会提供给本机识别器。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if model.inputMode == SpeechProvider.parakeet.rawValue {
+                Picker("流式模式", selection: $model.parakeetMode) {
+                    ForEach(ParakeetMode.allCases) { Text($0.title).tag($0) }
+                }.disabled(model.running || model.busy)
+                Button("下载 / 准备 Parakeet（不录音）") { model.prepareSpeechModel() }.disabled(model.running || model.busy)
+                Text("英文流式识别 · 本机处理。320ms 使用更多语音上下文，160ms 更早预览；这不是完整字幕延迟保证。首次需下载模型，准备完成后才开启麦克风。课程术语用于 GPT 整理与翻译；EOU 原始结果没有标点。停止会完成尾音并保存整节课。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if model.inputMode == "deepgram" {
@@ -1074,10 +1078,12 @@ struct SettingsView: View {
             }
             #endif
             Picker("中文翻译", selection: $model.translationMode) {
-                Text("AI · 上下文逐句翻译").tag("gpt")
-                Text("Apple · 本机翻译（默认，无需 key）").tag("apple")
+                Text("GPT / AI · 上下文逐句翻译（默认）").tag("gpt")
+                Text("Apple · 本机翻译（离线备用，无需 key）").tag("apple")
             }.disabled(model.running || model.busy)
             if model.translationMode == "gpt" {
+                Text("GPT 优先：响应较慢时继续等待，不因 2.5 秒无中文而切换。缺少 key 或请求实际失败时，才尝试 Apple 并显示原因。")
+                    .font(.caption).foregroundStyle(.secondary)
                 Picker("AI 服务", selection: $model.provider) {
                     ForEach(AIProvider.allCases) { Text($0.title).tag($0) }
                 }.disabled(model.running || model.busy || model.archive.working)

@@ -1,10 +1,11 @@
 import Foundation
 
 public enum SpeechProvider: String, CaseIterable, Identifiable, Sendable {
-    case whisperKit = "whisperkit", appleSpeech = "apple-speech", openAI = "openai-asr", deepgram
+    case parakeet = "parakeet-eou", whisperKit = "whisperkit", appleSpeech = "apple-speech", openAI = "openai-asr", deepgram
     public var id: String { rawValue }
     public var title: String {
         switch self {
+        case .parakeet: "Parakeet EOU · On-device streaming English"
         case .whisperKit: "WhisperKit · On device"
         case .appleSpeech: "Apple · SFSpeechRecognizer"
         case .openAI: "OpenAI · Cloud audio chunks"
@@ -20,6 +21,12 @@ public enum WhisperModel: String, CaseIterable, Identifiable, Sendable {
     case turbo = "openai_whisper-large-v3-v20240930_turbo"
     public var id: String { rawValue }
     public var title: String { self == .base ? "Base · faster startup" : "Large v3 Turbo · more memory" }
+}
+
+public enum ParakeetMode: String, CaseIterable, Identifiable, Sendable {
+    case balanced320 = "320ms", fast160 = "160ms"
+    public var id: String { rawValue }
+    public var title: String { self == .balanced320 ? "320ms · more acoustic context" : "160ms · earliest preview" }
 }
 
 public struct TranscriptEvent: Sendable, Equatable {
@@ -51,8 +58,9 @@ public extension StreamingTranscriber {
 }
 
 @MainActor public enum TranscriberFactory {
-    public static func make(provider: SpeechProvider, model: WhisperModel = .base, key: String = "", vocabulary: String = "") -> any StreamingTranscriber {
+    public static func make(provider: SpeechProvider, model: WhisperModel = .base, key: String = "", vocabulary: String = "", parakeetMode: ParakeetMode = .balanced320) -> any StreamingTranscriber {
         switch provider {
+        case .parakeet: ParakeetTranscriber(mode: parakeetMode)
         case .whisperKit: WhisperTranscriber(model: model, vocabulary: vocabulary)
         case .appleSpeech: AppleTranscriber()
         case .openAI: CloudTranscriber(provider: .openAI, key: key)

@@ -14,12 +14,13 @@ this version. We do not sell lecture data or use it to train our own models.
 
 Recording starts only after you select Start and grant the operating system's
 microphone permission. Stop ends capture; queued audio may continue to be decoded
-so the last sentence is saved. WhisperKit and the Apple Speech option perform
+so the last sentence is saved. Parakeet EOU (FluidAudio), WhisperKit and the Apple Speech option perform
 recognition on your device. Glacier's own recorder buffers audio in memory and
 **does not save a reusable audio recording file**. The transcript, including the
 latest provisional text, is saved locally. Recognition and translation can be wrong.
 
-WhisperKit downloads models/tokenizers from Hugging Face/Argmax model repositories
+Parakeet downloads Core ML models from Hugging Face/FluidInference; WhisperKit
+downloads models/tokenizers from Hugging Face/Argmax model repositories
 on first use. Those download services receive normal network information such as
 your IP address and requested model, not your lecture audio. Apple Translation
 processes English–Chinese text on device after language packs are installed. Apple
@@ -32,7 +33,9 @@ having compatible models and language packs installed.
 
 The App Store edition blocks cloud requests until you explicitly allow the
 recipient and data type in Settings. Saving a key alone does not grant permission.
-You can use WhisperKit and Apple translation without a cloud API key.
+GPT translation is the default selection, but it cannot send data without the
+required consent and key. You can use Parakeet/WhisperKit with Apple translation
+without a cloud API key.
 
 - **OpenAI audio transcription** sends microphone audio chunks to OpenAI.
 - **Deepgram audio transcription** streams microphone audio to Deepgram.

@@ -1,4 +1,4 @@
-// swift-tools-version: 5.10
+// swift-tools-version: 6.2
 import PackageDescription
 
 let package = Package(
@@ -10,12 +10,17 @@ let package = Package(
         .executable(name: "GlacierCoreVerify", targets: ["GlacierCoreVerify"])
     ],
     dependencies: [
-        .package(url: "https://github.com/argmaxinc/WhisperKit.git", exact: "1.1.1")
+        .package(url: "https://github.com/argmaxinc/WhisperKit.git", exact: "1.1.1"),
+        // ASR only: omit TTS, diarization and the unrelated NeMo binary runtime.
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.18.3", traits: [])
     ],
     targets: [
-        .target(name: "GlacierCore", dependencies: [.product(name: "WhisperKit", package: "WhisperKit")], path: "Core"),
+        .target(name: "GlacierCore", dependencies: [
+            .product(name: "WhisperKit", package: "WhisperKit"),
+            .product(name: "FluidAudio", package: "FluidAudio")
+        ], path: "Core"),
         .executableTarget(name: "GlacierApp", dependencies: ["GlacierCore"], path: "Sources"),
         .executableTarget(name: "GlacierCoreVerify", dependencies: ["GlacierCore", .product(name: "WhisperKit", package: "WhisperKit")], path: "CoreTests")
     ],
-    swiftLanguageVersions: [.v5]
+    swiftLanguageModes: [.v5]
 )

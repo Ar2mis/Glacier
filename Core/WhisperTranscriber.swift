@@ -5,22 +5,24 @@ import WhisperKit
 // detached loader never uses this instance again after returning it.
 private struct PreparedWhisper: @unchecked Sendable { let pipe: WhisperKit }
 
-private actor WhisperDecoder {
+/// The same decoder is used by live capture and paced A/B replay.
+public actor WhisperDecoder {
     private var pipe: WhisperKit?
     private var vocabulary = ""
     private var previousFinal = ""
     private let preparation = SharedPreparation<PreparedWhisper>()
     private var decoding: (id: UUID, task: Task<String, Error>)?
-    func setVocabulary(_ text: String) { vocabulary = CourseVocabulary.normalize(text); previousFinal = "" }
-    func remember(_ text: String) { previousFinal = String(text.suffix(500)) }
-    func prepare(model: WhisperModel) async throws {
+    public init() {}
+    public func setVocabulary(_ text: String) { vocabulary = CourseVocabulary.normalize(text); previousFinal = "" }
+    public func remember(_ text: String) { previousFinal = String(text.suffix(500)) }
+    public func prepare(model: WhisperModel) async throws {
         if pipe != nil { try Task.checkCancellation(); return }
         pipe = try await preparation.get {
             PreparedWhisper(pipe: try await WhisperKit(WhisperModelStorage.configuration(model)))
         }.pipe
         try Task.checkCancellation()
     }
-    func decode(_ samples: [Float]) async throws -> String {
+    public func decode(_ samples: [Float]) async throws -> String {
         // A prior canceled session can still be inside non-cancellable inference.
         // Serialize access to WhisperKit before admitting a new decode.
         while let previous = decoding {

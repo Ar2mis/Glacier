@@ -6,13 +6,16 @@ import Translation
 typealias CaptionError = GlacierCoreError
 
 @MainActor final class MobileCaptions: ObservableObject {
-    @Published var provider = SpeechProvider(rawValue: UserDefaults.standard.string(forKey: "speechProvider") ?? "") ?? .whisperKit
+    @Published var provider = SpeechProvider(rawValue: UserDefaults.standard.string(forKey: "speechProvider") ?? "") ?? .parakeet
     @Published var whisperModel = WhisperModel(rawValue: UserDefaults.standard.string(forKey: "whisperModel") ?? "") ?? .base
+    @Published var parakeetMode = ParakeetMode(rawValue: UserDefaults.standard.string(forKey: "parakeetMode") ?? "") ?? .balanced320
     @Published var glossary = UserDefaults.standard.string(forKey: "courseVocabulary") ?? ""
     @Published var refineModel = UserDefaults.standard.string(forKey: "refineModel") ?? "gpt-4o-mini"
-    @Published var cleanup = UserDefaults.standard.bool(forKey: "cloudCleanup")
+    @Published var cleanup = (UserDefaults.standard.object(forKey: "cloudCleanup") as? Bool) ?? true
     @Published var translationConfig: TranslationSession.Configuration?
     @Published var localStatus = "Apple English–Chinese translation: prepare once, then use offline."
+    @Published var activeTranslationEngine = "GPT · awaiting setup"
+    @Published var translationNotice = ""
     private var nativeSession: TranslationSession?
     private var stablePrefix = StableCaptionPrefix()
     @Published var openAIKey = ""
@@ -72,6 +75,7 @@ typealias CaptionError = GlacierCoreError
         stablePrefix = StableCaptionPrefix()
         UserDefaults.standard.set(provider.rawValue, forKey: "speechProvider")
         UserDefaults.standard.set(whisperModel.rawValue, forKey: "whisperModel")
+        UserDefaults.standard.set(parakeetMode.rawValue, forKey: "parakeetMode")
         UserDefaults.standard.set(glossary, forKey: "courseVocabulary")
         UserDefaults.standard.set(refineModel, forKey: "refineModel")
         UserDefaults.standard.set(courseName, forKey: "courseName")
@@ -84,13 +88,17 @@ typealias CaptionError = GlacierCoreError
                 if provider.sendsAudioToCloud { try CloudConsent.require(provider == .deepgram ? "deepgram" : "openai", .audio) }
                 let openAI = provider == .openAI ? try CredentialStore.read("openai") : (try? CredentialStore.read("openai")) ?? ""
                 refiner = cleanup && !openAI.isEmpty && CloudConsent.allowed("openai", .text) ? TranscriptRefiner(key: openAI, model: refineModel) : nil
+                activeTranslationEngine = refiner == nil ? "Apple on-device translation" : "OpenAI · \(refineModel)"
+                translationNotice = cleanup && refiner == nil
+                    ? (openAI.isEmpty ? "GPT needs a saved OpenAI key; using Apple if its language pack is ready."
+                       : "OpenAI text sharing is off; using Apple until you enable it in Settings.") : ""
                 let key = provider == .deepgram ? try CredentialStore.read("deepgram") : openAI
                 let saved = LectureSession(course: courseName, source: provider.title, glossary: glossary,
                                            archiveModel: "gpt-4o-mini", autoArchive: autoArchive)
                 try await archive.lectures.create(saved)
                 sessionID = saved.id
                 try Task.checkCancellation()
-                let capture = TranscriberFactory.make(provider: provider, model: whisperModel, key: key, vocabulary: glossary)
+                let capture = TranscriberFactory.make(provider: provider, model: whisperModel, key: key, vocabulary: glossary, parakeetMode: parakeetMode)
                 self.capture = capture
                 let stream = try await capture.start { [weak self] message in
                     guard self?.generation == token else { return }; self?.status = message
@@ -137,8 +145,12 @@ typealias CaptionError = GlacierCoreError
                                 }
                             })
                         } catch {
+                            try Task.checkCancellation()
+                            guard generation == token else { throw CancellationError() }
                             guard let nativeSession else { throw error }
                             self.refiner = nil
+                            activeTranslationEngine = "Apple on-device translation"
+                            translationNotice = "GPT request failed; switched to Apple. Check key, quota and network."
                             result = .init(english: text, chinese: try await nativeSession.translate(text).targetText)
                             status = "Cloud cleanup unavailable; switched to Apple translation."
                         }
@@ -210,6 +222,8 @@ struct MobileContent: View {
                     Text(model.caption.chinese).font(.custom("Songti SC", size: 23))
                     if !model.rawText.isEmpty { Text("Live ASR: \(model.rawText)").font(.caption).foregroundStyle(.secondary) }
                     Text(model.status).font(.caption).textSelection(.enabled)
+                    Text("Translation: " + model.activeTranslationEngine).font(.caption)
+                    if !model.translationNotice.isEmpty { Text(model.translationNotice).font(.caption).foregroundStyle(.orange) }
                     Button(model.running || model.busy ? "Stop" : "Start recording") {
                         if model.running || model.busy { model.stop() } else { model.start() }
                     }.buttonStyle(.borderedProminent).tint(.cyan).disabled(model.finishing)
@@ -218,12 +232,16 @@ struct MobileContent: View {
                     Picker("Provider", selection: $model.provider) { ForEach(SpeechProvider.allCases) { Text($0.title).tag($0) } }
                     if model.provider == .whisperKit {
                         Picker("Model", selection: $model.whisperModel) { ForEach(WhisperModel.allCases) { Text($0.title).tag($0) } }
-                        Text("Base is the mobile default. First use downloads and warms the model. Turbo needs more memory.").font(.caption)
+                        Text("Base is the smaller Whisper option. First use downloads and warms the model. Turbo needs more memory.").font(.caption)
+                    }
+                    if model.provider == .parakeet {
+                        Picker("Streaming mode", selection: $model.parakeetMode) { ForEach(ParakeetMode.allCases) { Text($0.title).tag($0) } }
+                        Text("Streaming English on device. First use downloads the EOU model before opening the microphone. Stop drains the final audio. Glossary terms are used by GPT, not the EOU decoder.").font(.caption)
                     }
                     if model.provider.sendsAudioToCloud { Text("Microphone audio will be sent to the selected cloud provider.").font(.caption) }
                 }.disabled(model.running || model.busy)
                 Section("Bilingual cleanup") {
-                    Toggle("English cleanup + Chinese translation", isOn: $model.cleanup)
+                    Toggle("GPT English cleanup + Chinese translation (default)", isOn: $model.cleanup)
                     Picker("OpenAI model", selection: $model.refineModel) {
                         Text("GPT-4o mini").tag("gpt-4o-mini"); Text("GPT-5 mini").tag("gpt-5-mini")
                     }
@@ -234,7 +252,7 @@ struct MobileContent: View {
                     Button("Remove saved keys") { model.removeKeys() }
                     Button("Prepare Apple Translation") { model.prepareLocalTranslation() }
                     Text(model.localStatus).font(.caption)
-                    Text("Cleanup sends transcript text, recent context and vocabulary to OpenAI. Turn it off for Apple on-device bilingual captions. Apple language packs need a one-time download. Your GitHub secret is separate.").font(.caption)
+                    Text("GPT sends transcript text, recent context and vocabulary to OpenAI. Slow responses do not trigger a timed Apple fallback; missing credentials/consent or actual request failures can use Apple. Turn it off for Apple on-device bilingual captions. Apple language packs need a one-time download. Your GitHub secret is separate.").font(.caption)
                 }.disabled(model.running || model.busy)
                 Section("Cloud data sharing · optional") {
                     Text("No cloud sharing is enabled by default. Text sharing includes transcript, course terms, context and full lecture content for study-note generation. Audio sharing sends microphone audio to the selected provider. Saving a key alone grants no consent.").font(.caption)

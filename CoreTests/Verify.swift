@@ -22,6 +22,8 @@ final class RefinerMock: URLProtocol, @unchecked Sendable {
 @main enum CoreVerify {
     static func main() async throws {
         setbuf(stdout, nil)
+        if CommandLine.arguments.contains("--compare-asr") { try await compareASR(); return }
+        if CommandLine.arguments.contains("--prepare-parakeet") { try await ParakeetEngine().prepare(); print("Parakeet model ready"); return }
         try await verifyPreparationCancellation()
         try verifyCloudConsent()
         try verifyCredentialPersistence()
@@ -29,6 +31,7 @@ final class RefinerMock: URLProtocol, @unchecked Sendable {
         try verifyWhisperStorage()
         try verifyRefinementStream()
         try await verifyWhisperCoalescing()
+        try await verifyParakeetStreaming()
         if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--whisper-audio" {
             let model: WhisperModel = CommandLine.arguments.contains("--turbo") ? .turbo : .base
             let start = Date()

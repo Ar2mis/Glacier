@@ -5,9 +5,10 @@ Maintained by Ziruo Chen (GitHub: Ar2mis).
 
 ## Start a lecture on Mac
 
-1. Open Glacier. Choose **WhisperKit** and **Base** for the quickest first setup.
+1. Open Glacier. Choose **Parakeet EOU → 320ms** (the new-install default) for streaming English, or **WhisperKit → Base**.
 2. Connect to the internet for the initial speech-model download. Choose
-   **Prepare Apple Translation** and approve the English–Chinese language download.
+   **Download / Prepare speech model** before class. Parakeet opens the microphone
+   only after its model is ready.
 3. Allow microphone access when prompted. Select your microphone in macOS Sound settings.
 4. Choose a folder under **Lecture archive → Choose export folder**. Glacier uses
    this permission for future Word exports; no broad Desktop access is needed.
@@ -20,17 +21,18 @@ Maintained by Ziruo Chen (GitHub: Ar2mis).
 
 ## Translation and cloud keys
 
-Apple translation is the default on-device option. Language packs need one initial
+GPT is the default translation option. Apple is the optional on-device alternative. Language packs need one initial
 download and cannot be installed while offline. If they are missing, Glacier
 shows a preparation message; it cannot promise offline translation before setup.
-For optional OpenAI cleanup on Mac, choose AI translation, paste your own key,
+For OpenAI cleanup on Mac, choose GPT / AI translation, paste your own key,
 Save, allow text sharing to OpenAI, then Test Connection. Never share your key with
 the developer or paste it into GitHub. GitHub Actions secrets do not configure the
 installed app. API usage is billed by your provider, separately from Glacier.
 
 If cloud captions fail, Glacier uses installed Apple language packs when available.
-Mac live captions also switch to Apple when no first Chinese fragment arrives
-within 2.5 seconds. This is a fallback threshold, not a guarantee of total latency.
+A slow GPT response does not switch to Apple after 2.5 seconds. Only missing
+credentials/consent or actual service failures can trigger the local fallback,
+with status explaining why. Prepare Apple language packs in advance if desired.
 Reading-priority mode deliberately holds captions longer; turn it off to follow
 speech more closely. Base uses less memory than Turbo. Lecture text is saved
 separately from the short on-screen history.

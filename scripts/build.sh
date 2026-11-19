@@ -19,12 +19,12 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundleDisplayName</key><string>Glacier Dev</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFile</key><string>Glacier</string>
-<key>CFBundleVersion</key><string>12</string>
-<key>CFBundleShortVersionString</key><string>0.7.0</string>
+<key>CFBundleVersion</key><string>13</string>
+<key>CFBundleShortVersionString</key><string>0.7.1</string>
 <key>LSMinimumSystemVersion</key><string>26.0</string>
 <key>LSUIElement</key><true/>
 <key>GlacierDistribution</key><string>dev</string>
-<key>NSMicrophoneUsageDescription</key><string>将讲话实时转为字幕。WhisperKit/Apple 在本机处理；选择 OpenAI/Deepgram 时会发送音频到该服务。</string>
+<key>NSMicrophoneUsageDescription</key><string>将讲话实时转为字幕。Parakeet/WhisperKit/Apple 在本机处理；选择 OpenAI/Deepgram 时会发送音频到该服务。</string>
 <key>NSSpeechRecognitionUsageDescription</key><string>将英语讲话转为实时字幕。</string>
 </dict></plist>
 PLIST
