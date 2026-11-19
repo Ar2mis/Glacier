@@ -33,8 +33,7 @@ public struct SavedUtterance: Codable, Sendable {
 /// No API keys or raw microphone audio are stored here.
 public actor LectureSessionStore {
     public static var defaultDirectory: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Glacier/Lectures", isDirectory: true)
+        AppDistribution.supportDirectory.appendingPathComponent("Lectures", isDirectory: true)
     }
     public let directory: URL
     public init(directory: URL = LectureSessionStore.defaultDirectory) { self.directory = directory }

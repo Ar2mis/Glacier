@@ -130,7 +130,7 @@ struct TranslationStreamState {
     var complete = false
     mutating func accept(_ payload: String, provider: AIProvider) throws -> String? {
         if payload == "[DONE]" { return nil }
-        guard let data = payload.data(using: .utf8), let event = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        guard let data = payload.data(using: .utf8), let event = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             throw TranslationFailure(kind: .incomplete, message: "翻译数据格式无效")
         }
         if event["error"] != nil { throw TranslationFailure.service(event) }
@@ -228,6 +228,7 @@ struct GPTTranslator {
         return text
     }
     func translate(_ sentence: String, context: [TranslationPair], glossary: String) async throws -> String {
+        try CloudConsent.require(provider.rawValue, .text)
         var request = URLRequest(url: URL(string: provider.endpoint)!)
         request.httpMethod = "POST"; request.timeoutInterval = 20
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
@@ -268,6 +269,7 @@ struct GPTTranslator {
         }
         var body = Self.requestBody(sentence: sentence, context: context, glossary: glossary, model: model)
         body["stream"] = true
+        try CloudConsent.require(provider.rawValue, .text)
         var request = URLRequest(url: URL(string: provider.endpoint)!)
         request.httpMethod = "POST"; request.timeoutInterval = 10
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
@@ -321,6 +323,7 @@ struct GPTTranslator {
     }
 
     func generateJSON(instructions: String, input: String, tokens: Int = 14000) async throws -> Data {
+        try CloudConsent.require(provider.rawValue, .text)
         var request = URLRequest(url: URL(string: provider.endpoint)!)
         request.httpMethod = "POST"; request.timeoutInterval = 180
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")

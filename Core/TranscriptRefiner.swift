@@ -85,6 +85,7 @@ public struct TranscriptRefiner: Sendable {
     }
     public func refine(_ text: String, glossary: String, context: [BilingualCaption] = [],
                        update: (@Sendable (BilingualCaption) async -> Void)? = nil) async throws -> BilingualCaption {
+        try CloudConsent.require("openai", .text)
         guard !key.isEmpty else { throw GlacierCoreError.message("Save an OpenAI API key to enable bilingual cleanup.") }
         var request = URLRequest(url: URL(string: "https://api.openai.com/v1/responses")!)
         request.httpMethod = "POST"; request.timeoutInterval = 8

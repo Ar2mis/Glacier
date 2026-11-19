@@ -70,6 +70,8 @@ struct ArchiveVerify {
         let output = try WordExporter.export(job, desktop: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(".build/document-qa"))
         print("PASS: exact English reconstruction, numbered translation coverage, safe filenames and Word export")
         print(output.path)
+        let englishOnly = try WordExporter.exportEnglish(english, course: "Offline English", id: UUID(), directory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(".build/document-qa"))
+        try englishOnly.path.write(toFile: ".build/offline-archive-output-path.txt", atomically: true, encoding: .utf8)
         try output.path.write(toFile: ".build/archive-output-path.txt", atomically: true, encoding: .utf8)
         let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("GlacierArchiveRetry-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: temporary) }

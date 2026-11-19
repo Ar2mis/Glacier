@@ -5,8 +5,7 @@ import WhisperKit
 /// New downloads live outside macOS's protected Documents folder.
 public enum WhisperModelStorage {
     public static var root: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Glacier/Models")
+        AppDistribution.supportDirectory.appendingPathComponent("Models")
     }
     public static var legacyRoot: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -20,7 +19,7 @@ public enum WhisperModelStorage {
         return required.allSatisfy { FileManager.default.isReadableFile(atPath: folder.appendingPathComponent($0).path) } ? folder : nil
     }
     public static func configuration(_ model: WhisperModel) -> WhisperKitConfig {
-        let cachedRoot = cachedFolder(model, root: root) != nil ? root : legacyRoot
+        let cachedRoot = AppDistribution.isStore || cachedFolder(model, root: root) != nil ? root : legacyRoot
         let local = cachedFolder(model, root: cachedRoot)
         return WhisperKitConfig(model: model.rawValue, downloadBase: root,
                                 modelFolder: local?.path, tokenizerFolder: local == nil ? root : cachedRoot,

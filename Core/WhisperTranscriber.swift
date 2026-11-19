@@ -1,40 +1,49 @@
 import Foundation
 import WhisperKit
 
+// A one-time ownership transfer from the loader into the decoder actor. The
+// detached loader never uses this instance again after returning it.
+private struct PreparedWhisper: @unchecked Sendable { let pipe: WhisperKit }
+
 private actor WhisperDecoder {
     private var pipe: WhisperKit?
     private var vocabulary = ""
     private var previousFinal = ""
-    private var loading: (id: UUID, task: Task<Void, Error>)?
+    private let preparation = SharedPreparation<PreparedWhisper>()
+    private var decoding: (id: UUID, task: Task<String, Error>)?
     func setVocabulary(_ text: String) { vocabulary = CourseVocabulary.normalize(text); previousFinal = "" }
     func remember(_ text: String) { previousFinal = String(text.suffix(500)) }
     func prepare(model: WhisperModel) async throws {
         if pipe != nil { try Task.checkCancellation(); return }
-        // A canceled click must not launch a second compiler when retried. Keep
-        // the one preparation task; it does not open or retain microphone audio.
-        if loading == nil {
-            loading = (UUID(), Task { self.pipe = try await WhisperKit(WhisperModelStorage.configuration(model)) })
-        }
-        let work = loading!
-        do {
-            try await work.task.value
-            if loading?.id == work.id { loading = nil }
-        } catch {
-            if loading?.id == work.id { loading = nil }
-            throw error
-        }
+        pipe = try await preparation.get {
+            PreparedWhisper(pipe: try await WhisperKit(WhisperModelStorage.configuration(model)))
+        }.pipe
         try Task.checkCancellation()
     }
     func decode(_ samples: [Float]) async throws -> String {
+        // A prior canceled session can still be inside non-cancellable inference.
+        // Serialize access to WhisperKit before admitting a new decode.
+        while let previous = decoding {
+            _ = try? await previous.task.value
+            if decoding?.id == previous.id { decoding = nil }
+            try Task.checkCancellation()
+        }
         guard let pipe else { throw GlacierCoreError.message("Whisper model is not ready.") }
         // Token conditioning helps recognize course terms without sending audio away.
         let recent = Array((pipe.tokenizer?.encode(text: previousFinal) ?? []).suffix(48))
         let terms = Array((pipe.tokenizer?.encode(text: vocabulary) ?? []).prefix(48))
         let options = DecodingOptions(language: "en", temperatureFallbackCount: 1, skipSpecialTokens: true,
                                      withoutTimestamps: true, promptTokens: recent.isEmpty && terms.isEmpty ? nil : recent + terms, suppressBlank: true)
-        let results = try await pipe.transcribe(audioArray: samples, decodeOptions: options)
+        let id = UUID()
+        let work = Task {
+            let results = try await pipe.transcribe(audioArray: samples, decodeOptions: options)
+            return results.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        decoding = (id, work)
+        defer { if decoding?.id == id { decoding = nil } }
+        let text = try await work.value
         try Task.checkCancellation()
-        return results.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        return text
     }
 }
 
@@ -55,14 +64,15 @@ private actor WhisperDecoder {
         failure = nil
         let token = generation
         status("正在开启麦克风…")
-        await decoder.setVocabulary(vocabulary)
         try Task.checkCancellation()
         guard generation == token else { throw CancellationError() }
         let audio = try await microphone.start()
         let (stream, continuation) = AsyncThrowingStream<TranscriptEvent, Error>.makeStream(bufferingPolicy: .bufferingOldest(64))
         output = continuation
-        task = Task { [weak self, decoder, model] in
+        task = Task { [weak self, decoder, model, vocabulary] in
             do {
+                // Vocabulary and cold compilation never gate microphone startup.
+                await decoder.setVocabulary(vocabulary)
                 // Capture/ingestion starts first. Cold model compilation must not
                 // delay the microphone or discard the beginning of the lecture.
                 try await withThrowingTaskGroup(of: Void.self) { group in

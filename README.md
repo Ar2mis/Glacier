@@ -1,5 +1,17 @@
 # Glacier 🧊
 
+
+> **Mac App Store preparation (0.7):** use the native `GlacierMac` scheme for the
+> sandboxed store edition, `GlacierMacDev` for development, and `GlacierIOS` for
+> the iOS 18+ foreground edition. See [the signing/Archive guide](docs/MAC_APP_STORE_RELEASE.md).
+> Shell/nightly builds now produce **Glacier Dev.app**, isolated from official
+> Glacier.app. Store builds disable Wispr automation, default to Apple on-device
+> translation, and require explicit consent for optional cloud requests. Initial
+> model/language downloads require internet; this is not yet an approved release.
+> Word export uses a user-selected folder. A key-free English-only Word exporter
+> is available; generative bilingual study notes still require a cloud key/consent.
+> [Privacy](PRIVACY_POLICY.md) · [Support](SUPPORT.md)
+
 **On-device lecture transcription and English–Chinese captions for macOS and iOS.**
 
 Glacier is an Apple Silicon desktop prototype for students who follow spoken
@@ -54,9 +66,9 @@ package `GlacierCore`; the system-wide overlay and Wispr integration remain Mac 
 - **Study notes without Wispr:** after Stop, optional automatic archiving translates
   the complete saved English in numbered chunks, generates a Chinese summary,
   rendered mind map and English outline, and exports Word with the full English
-  followed by the full Chinese. Mac exports go to course/topic folders on the
-  Desktop; iOS exports go to Documents/Glacier with a Share button. Wispr's existing
-  full-transcript capture remains available on Mac.
+  followed by the full Chinese. Mac exports go to course/topic folders inside a
+  user-selected location; iOS exports go to Documents/Glacier with a Share button.
+  Wispr full-transcript capture remains available only in development builds.
 - **Recovery:** raw utterances and English.txt remain on device after export.
   Archive checkpoints retain successful translations after API/network failures.
   Reopening Glacier resumes unfinished automatic exports; the archive controls can
@@ -92,7 +104,7 @@ mobile thermals, real lecture latency and provider availability need live testin
 git clone https://github.com/Ar2mis/Glacier.git
 cd Glacier
 bash scripts/build.sh
-open dist/Glacier.app
+open "dist/Glacier Dev.app"
 ```
 
 The build creates an **ad-hoc signed** app; it does not replace your installed
@@ -102,20 +114,31 @@ so macOS may require reauthorizing the new build even when the old toggle is on.
 Stable signing/notarization is still future work. Apple's microphone input mode
 requires microphone permission and speech assets.
 
-For a fresh Mac session, select **WhisperKit → Large v3 Turbo** (the Mac default), save your OpenAI
-key, and enable **一次请求完成英文整理 + 中文翻译**. Microphone startup is acknowledged below the ice; the ice accepts the first click even while another app is active. A red recording dot and two-second confirmation appear only after the microphone starts. Cold model preparation runs alongside audio ingestion, so a click does not wait for model compilation before opening the microphone. A second click cancels microphone preparation or stops capture; startup failures appear beside the ice. Base remains selectable for lower memory
-or faster first download; iOS still defaults to Base. WhisperKit receives bounded
-course-vocabulary tokens and the previous final utterance as on-device decoder
-context. The utterance cap is eight seconds, with earlier silence finalization;
-stable partial translation and readable presentation proceed independently. Turbo uses Argmax's actual model name
-`openai_whisper-large-v3-v20240930_turbo`; `openai_whisper-large-v3-turbo` is not the
-Core ML repository identifier. First model loading can take much longer than
-subsequent starts. Downloaded models prewarm without microphone access when the Mac app opens. Hardware compute defaults remain unchanged; first-use Core ML compilation can still take minutes. Complete local model folders bypass the remote model-list request; new downloads use Application Support/Glacier/Models, with legacy Documents/huggingface caches still supported. The Mac retains its prepared Whisper adapter between sessions with unchanged model/glossary. On iOS, disable cleanup for local English-only use without a key.
+For a fresh store session, select **WhisperKit → Base** and **Apple on-device
+translation**; neither needs an API key. Use **Prepare speech model (no recording)**
+and **Prepare Apple Translation** while online before your first lecture. Turbo
+remains available for higher-memory devices, and the development app retains its
+previous model choice. Initial Core ML compilation can take minutes. Preparation
+runs outside the decoder actor with one shared loader, cancellable waiters and a
+three-minute waiting deadline. Canceling a waiter does not launch another compiler.
+Microphone startup is acknowledged below the ice only after the microphone starts;
+startup errors are visible. Model preparation and ingestion can overlap, but a
+bounded startup buffer is not a substitute for downloading models before a lecture.
+
+WhisperKit receives bounded course-vocabulary tokens and previous final-utterance
+context. Utterances cap at eight seconds with earlier silence finalization. The
+Turbo model is `openai_whisper-large-v3-v20240930_turbo`. Complete local model folders
+bypass the remote model-list request. Store assets live in the sandbox's
+Application Support/Glacier/Models; Dev uses Application Support/Glacier Dev/Models.
+Legacy Documents caches are supported only outside the store edition. The Mac
+retains a prepared adapter between sessions with unchanged model/glossary. iOS
+uses Apple bilingual translation by default; optional OpenAI cleanup requires a
+key and explicit text-sharing consent.
 
 Live follow is now the default: stable prefixes can translate after two agreeing ASR hypotheses, GPT cleanup requests Chinese first and streams bilingual JSON fields as they arrive, and ready pairs do not wait in the reading queue. Live cloud translation overlaps at most two requests, with at least 800 ms between starts, so a slow previous response does not hold up every newer Chinese caption. Responses can finish out of order; older results are retained in history but cannot rewind the displayed Chinese. Apple translation and reading priority remain serial. Live follow selects the newest ready source rather than translating every stale pending sentence. Skipped live requests retain their English history; full bilingual lecture export uses the complete journal. Reading priority retains ordered live requests. Capitalization/punctuation-only ASR edits do not restart word stability. English no longer waits for stable-prefix confirmation or GPT: raw recognition drafts appear immediately. The previous Chinese remains with a catching-up indicator until useful new Chinese arrives; a late translation cannot rewind the current English. No caption expires into a blank. Enable **阅读优先** to restore the adjustable 2–12-second dwell; this intentionally trades latency for reading time. Raw final utterances still go to the full lecture journal. Inference consumes the latest pending partial (approximately 0.75-second audio cadence) while separately retaining final audio windows; slow inference cannot build a queue of superseded prefixes. At most 64 pending final windows plus one latest partial are buffered (about 33 MB of 16 kHz Float PCM at full eight-second windows). Overload is bounded and reported rather than silently discarding final audio. This volatile startup buffer does not survive crashes; finalized transcripts are durably journaled.
 
-In Glacier's settings, select the input and translation provider, save the API
-key in the password field, and click **Test Connection · 测试连接**. It tests the
+For optional cloud translation, select the provider, explicitly allow that
+provider's text sharing, save your API key in the password field, and click **Test Connection · 测试连接**. It tests the
 actual selected caption model with a synthetic sentence and saves a pasted key
 only after success. The status indicator distinguishes saved, testing, connected
 and failed states. If macOS denies an old Keychain entry, **迁移钥匙串密钥** performs
@@ -151,7 +174,7 @@ archiving if desired.
 Install full Xcode (Command Line Tools alone do not include the iOS SDK), open
 `Glacier.xcodeproj`, select **GlacierIOS**, choose an iPhone simulator, and Run.
 For a physical device, select your signing team and a unique bundle identifier.
-The target supports iOS 17+, uses Base by default, and requests microphone/speech
+The target supports iOS 18+, uses Base by default, and requests microphone/speech
 permissions on use. It stops capture on backgrounding and requests limited time to
 finish the audio tail; saved text survives suspension. Return to the foreground to
 finish/retry Word exports. Files are accessible under Glacier in Files and through
@@ -262,7 +285,7 @@ configuration are outside its autonomous editing allowlist.
 Build the app, then package only the app bundle:
 
 ```sh
-ditto -c -k --sequesterRsrc --keepParent dist/Glacier.app dist/Glacier-macOS.zip
+ditto -c -k --sequesterRsrc --keepParent "dist/Glacier Dev.app" dist/Glacier-Dev-macOS.zip
 ```
 
 Recipients need an Apple Silicon Mac with macOS 26+, their own API keys, initial
@@ -282,9 +305,9 @@ Generated files remain under `.build/` and `dist/`.
 For a visual simulation, close other Glacier instances first:
 
 ```sh
-dist/Glacier.app/Contents/MacOS/LectureCaptions --simulate
+"dist/Glacier Dev.app/Contents/MacOS/GlacierDev" --simulate
 # Uses real installed Apple Translation, with simulated input/cloud failure:
-dist/Glacier.app/Contents/MacOS/LectureCaptions --simulate-local
+"dist/Glacier Dev.app/Contents/MacOS/GlacierDev" --simulate-local
 ```
 
 Neither simulation starts Wispr, records audio, reads API keys, or archives a
@@ -410,7 +433,7 @@ publishes arbitrary local edits. A dirty checkout, active Glacier process or los
 network defers the update; it retries on later scheduled invocations.
 
 Each new revision is built and fully verified in a detached worktree. Only a
-successful, signed build is atomically installed at `/Applications/Glacier.app`;
+successful, signed build is atomically installed at `/Applications/Glacier Dev.app`;
 the previous app is retained as a rollback copy. No lecture is terminated. The
 installed app takes effect at its next launch. Existing ad-hoc signing limitations
 still apply: macOS may ask to renew permissions/key access after an update.

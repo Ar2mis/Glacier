@@ -12,6 +12,19 @@ enum WordExporter {
             .replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;").replacingOccurrences(of: "\"", with: "&quot;")
     }
+    static func exportEnglish(_ english: String, course: String, id: UUID, directory: URL) throws -> URL {
+        guard !english.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw CaptionError.message("没有可导出的文字。") }
+        let folder = directory.appendingPathComponent(ArchiveText.safeName(course), isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let output = folder.appendingPathComponent("English-\(id.uuidString).docx")
+        let content = "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body>" +
+            paragraph(course.isEmpty ? "Lecture transcript" : course) + paragraph("Full saved English transcript. Provisional recognition may contain errors. No AI summary or Chinese translation is included in this offline export.") +
+            english.components(separatedBy: "\n").map { paragraph($0) }.joined() + "</w:body></w:document>"
+        let types = "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/></Types>"
+        let rels = "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/></Relationships>"
+        try StoredZip.archive([("[Content_Types].xml", Data(types.utf8)), ("_rels/.rels", Data(rels.utf8)), ("word/document.xml", Data(content.utf8))]).write(to: output, options: .atomic)
+        return output
+    }
     private static func paragraph(_ text: String, style: String = "Normal", newPage: Bool = false) -> String {
         "<w:p><w:pPr><w:pStyle w:val=\"\(style)\"/>\(newPage ? "<w:pageBreakBefore/>" : "")</w:pPr><w:r><w:t xml:space=\"preserve\">\(xml(text))</w:t></w:r></w:p>"
     }

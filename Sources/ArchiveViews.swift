@@ -10,8 +10,15 @@ struct ArchiveControls: View {
             TextField("课程名称（留空时由 AI 根据主要内容命名）", text: $model.courseName)
                 .textFieldStyle(.roundedBorder).disabled(model.running || model.busy)
             Toggle("停止录音后自动生成 Word", isOn: $model.autoArchive).disabled(model.running || model.busy)
-            Text("保存到桌面同名文件夹：中文总结、思维导图、英文知识点提纲，然后完整英文原文，再完整中文翻译。全文会发送给所选 AI 服务；失败时保留原文和进度。")
+            Text("保存到你选择的文件夹：中文总结、思维导图、英文知识点提纲，然后完整英文原文，再完整中文翻译。全文会发送给所选 AI 服务；失败时保留原文和进度。")
                 .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Button("选择保存文件夹") {
+                    do { if try ExportFolder.choose() { archive.status = "保存文件夹已授权；重启后仍可导出。" } }
+                    catch { archive.status = error.localizedDescription }
+                }
+                Button("仅导出完整英文 Word（离线）") { archive.exportSavedEnglish() }
+            }.disabled(archive.working || model.running || model.busy)
             HStack {
                 Button("归档已保存的录音") { model.archiveCurrent() }.disabled(archive.working || model.running || model.busy)
                 Button("继续未完成的归档") { archive.recoverSavedLectures(includeManual: true, excluding: nil) }.disabled(archive.working || model.running || model.busy || !model.hasAPIKey)

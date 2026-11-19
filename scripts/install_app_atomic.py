@@ -8,10 +8,12 @@ import sys
 
 def install(stage, destination):
     stage, destination = Path(stage), Path(destination)
+    if destination.name != 'Glacier Dev.app':
+        raise ValueError('Updater may only install Glacier Dev.app; official Glacier.app is protected')
     for app in [stage, destination] if destination.exists() else [stage]:
         if app.is_symlink(): raise ValueError('Refusing a symlink app destination')
         with (app / 'Contents/Info.plist').open('rb') as stream:
-            if plistlib.load(stream).get('CFBundleIdentifier') != 'local.ar2mis.lecturecaptions':
+            if plistlib.load(stream).get('CFBundleIdentifier') != 'com.ziruochen.glacier.dev':
                 raise ValueError('Refusing to replace a different application')
     if not destination.exists():
         os.rename(stage, destination)

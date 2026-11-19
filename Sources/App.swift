@@ -2,7 +2,9 @@ import AppKit
 import SwiftUI
 import Translation
 import Combine
+#if !APP_STORE
 import ApplicationServices
+#endif
 import GlacierCore
 
 typealias CaptionTranslationOperation = @Sendable (String, [TranslationPair], String,
@@ -79,7 +81,7 @@ final class CaptionModel: ObservableObject {
     @Published var inputMode = UserDefaults.standard.string(forKey: "inputMode") ?? "whisperkit" {
         didSet { UserDefaults.standard.set(inputMode, forKey: "inputMode") }
     }
-    @Published var whisperModel = WhisperModel(rawValue: UserDefaults.standard.string(forKey: "whisperModel") ?? "") ?? .turbo {
+    @Published var whisperModel = WhisperModel(rawValue: UserDefaults.standard.string(forKey: "whisperModel") ?? "") ?? (AppDistribution.isStore ? .base : .turbo) {
         didSet { UserDefaults.standard.set(whisperModel.rawValue, forKey: "whisperModel") }
     }
     @Published var refineEnabled = (UserDefaults.standard.object(forKey: "refineEnabled") as? Bool) ?? true {
@@ -89,7 +91,7 @@ final class CaptionModel: ObservableObject {
         didSet { UserDefaults.standard.set(refineModel, forKey: "refineModel") }
     }
     @Published var speechKeyDraft = ""
-    @Published var translationMode = UserDefaults.standard.string(forKey: "translationMode") ?? "gpt" {
+    @Published var translationMode = UserDefaults.standard.string(forKey: "translationMode") ?? "apple" {
         didSet { UserDefaults.standard.set(translationMode, forKey: "translationMode") }
     }
     @Published var provider = AIProvider(rawValue: UserDefaults.standard.string(forKey: "aiProvider") ?? "openai") ?? .openai {
@@ -97,8 +99,13 @@ final class CaptionModel: ObservableObject {
             UserDefaults.standard.set(provider.rawValue, forKey: "aiProvider")
             gptModel = provider.defaultModel
             apiKeyDraft = ""
-            hasAPIKey = APIKeyStore.exists(provider: provider)
-            credentialTestPassed = nil; credentialStatus = hasAPIKey ? "Saved on this Mac · not tested" : "No readable key · Apple fallback available"
+            hasAPIKey = false; credentialTestPassed = nil; credentialStatus = "Checking saved key…"
+            let selected = provider
+            Task {
+                let exists = await Task.detached { APIKeyStore.exists(provider: selected) }.value
+                guard provider == selected else { return }
+                hasAPIKey = exists; credentialStatus = exists ? "Saved on this Mac · not tested" : "No key needed for Apple translation"
+            }
         }
     }
     @Published var gptModel = UserDefaults.standard.string(forKey: "gptModel") ?? "gpt-4.1" {
@@ -166,16 +173,18 @@ final class CaptionModel: ObservableObject {
         self.translationOverride = operation
         self.localTranslationOverride = localTranslation; self.credentialOverride = credential
         if !simulation {
-            hasAPIKey = APIKeyStore.exists(provider: provider)
-            credentialStatus = hasAPIKey ? "Saved on this Mac · not tested" : "No readable key · Apple fallback available"
-            self.archive.recoverSavedLectures()
-            Task { _ = await ensureLocalTranslation(requestDownload: false) }
-            if inputMode == "whisperkit",
-               WhisperModelStorage.cachedFolder(whisperModel, root: WhisperModelStorage.root) != nil ||
-               WhisperModelStorage.cachedFolder(whisperModel, root: WhisperModelStorage.legacyRoot) != nil {
-                let capture = whisperAdapter()
-                Task { try? await capture.prepare() }
+            #if APP_STORE
+            if inputMode == "wispr" { inputMode = "whisperkit" }
+            #endif
+            Task {
+                let selected = provider
+                let exists = await Task.detached { APIKeyStore.exists(provider: selected) }.value
+                if provider == selected { hasAPIKey = exists; credentialStatus = exists ? "Saved on this Mac · not tested" : "No key needed for Apple translation" }
+                _ = await ensureLocalTranslation(requestDownload: false)
             }
+            self.archive.recoverSavedLectures()
+            // Model preparation is on demand. No protected-folder probes or Core ML
+            // compilation on application launch, especially before microphone consent.
         }
     }
     @Published var historyEntries: [CaptionHistoryEntry] = []
@@ -246,10 +255,13 @@ final class CaptionModel: ObservableObject {
         }
     }
     func accessibilitySettings() {
+        #if !APP_STORE
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(options)
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+        #endif
     }
+
     func checkWispr() {
         guard !running, !busy else { return }
         busy = true
@@ -361,6 +373,7 @@ final class CaptionModel: ObservableObject {
             if running || canCancelCapture { stop() } else { start() }
             return
         }
+        #if !APP_STORE
         guard AXIsProcessTrusted() else {
             status = "当前版本尚未获系统授权；若 Glacier 开关已开启，请关闭后重新开启，再重启 Glacier。"
             if showSettingsOnFailure { showSettingsRequested?() }; return
@@ -396,6 +409,9 @@ final class CaptionModel: ObservableObject {
                 if showSettingsOnFailure { showSettingsRequested?() }
             }
         }
+        #else
+        inputMode = "whisperkit"; start()
+        #endif
     }
     func start(allowEnglishOnly: Bool = false) {
         guard !busy, !running, (!simulation || coreFactory != nil) else { return }
@@ -423,6 +439,22 @@ final class CaptionModel: ObservableObject {
             }
         }
     }
+    func prepareSpeechModel() {
+        guard !running, !busy else { return }
+        busy = true; preparingCapture = true
+        status = "正在下载 / 准备语音模型 · 未开启麦克风"
+        let token = generation
+        startTask = Task {
+            defer { if generation == token { busy = false; preparingCapture = false; startTask = nil } }
+            do {
+                try await whisperAdapter().prepare()
+                try Task.checkCancellation()
+                if generation == token { status = "语音模型已就绪 · 点击开始收音" }
+            } catch {
+                if generation == token { status = error.localizedDescription }
+            }
+        }
+    }
     private func whisperAdapter() -> WhisperTranscriber {
         if cachedWhisper?.model != whisperModel || cachedWhisper?.glossary != glossary {
             cachedWhisper = (whisperModel, glossary, WhisperTranscriber(model: whisperModel, vocabulary: glossary))
@@ -437,6 +469,7 @@ final class CaptionModel: ObservableObject {
         resetCaptionSession(); coreFailure = nil
         startTask = Task {
             do {
+                if provider.sendsAudioToCloud { try CloudConsent.require(provider == .deepgram ? "deepgram" : "openai", .audio) }
                 let key: String
                 if provider == .openAI {
                     key = try await Task.detached { try APIKeyStore.read(provider: .openai) }.value
@@ -493,6 +526,8 @@ final class CaptionModel: ObservableObject {
         }
     }
     func watchWispr() {
+        #if !APP_STORE
+
         guard inputMode == "wispr", !simulation, !wisprObserving else { return }
         wisprObserving = true
         let token = generation
@@ -510,7 +545,9 @@ final class CaptionModel: ObservableObject {
             self.connectionStatus = message
         })
         status = "已就绪 · 在 Wispr 或冰块开始录音均可"
+        #endif
     }
+
     private func resetCaptionSession() {
         cancelTranslationWork()
         liveBuffer = LiveCaptionBuffer(); historyEntries = []; currentCaptionID = ""
@@ -635,6 +672,7 @@ final class CaptionModel: ObservableObject {
             guard !Task.isCancelled, translationEpoch == epoch else { return }
             if !useLocal && translationOverride == nil {
                 do {
+                    try CloudConsent.require(provider.rawValue, .text)
                     let selectedProvider = provider
                     let reader = credentialOverride
                     let key = try await Task.detached { try reader?() ?? APIKeyStore.read(provider: selectedProvider) }.value
@@ -666,7 +704,21 @@ final class CaptionModel: ObservableObject {
                 sequence += 1; let requestSequence = sequence
                 nextStart = Date().addingTimeInterval(0.8)
                 let request = Task {
-                    defer { translationRequests[requestID] = nil }
+                    var receivedChinese = false
+                    let fallbackWatchdog = Task {
+                        do { try await Task.sleep(for: .milliseconds(2500)) } catch { return }
+                        guard !requestUsesLocal, !receivedChinese, generation == token,
+                              translationEpoch == epoch, running,
+                              await ensureLocalTranslation(requestDownload: false) else { return }
+                        guard !Task.isCancelled, !receivedChinese, generation == token, translationEpoch == epoch else { return }
+                        useLocal = true; fallbackReason = "云端首字等待超过 2.5 秒"
+                        activeTranslationEngine = "Apple 本机翻译 · 云端响应较慢"
+                        for pending in translationRequests.values {
+                            pending.task.cancel(); liveBuffer.retry(pending.job)
+                        }
+                        translationRequests.removeAll()
+                    }
+                    defer { fallbackWatchdog.cancel(); translationRequests[requestID] = nil }
                     do {
                         let translated: String
                         var refined: BilingualCaption?
@@ -675,6 +727,7 @@ final class CaptionModel: ObservableObject {
                             await MainActor.run {
                                 guard owner.generation == token, owner.translationEpoch == epoch, !Task.isCancelled,
                                       owner.running, owner.translationRequests[requestID] != nil else { return }
+                                if !text.isEmpty { receivedChinese = true }
                                 owner.showTranslation(text, job: job, complete: false, sequence: requestSequence)
                             }
                         }
@@ -691,6 +744,7 @@ final class CaptionModel: ObservableObject {
                                     await MainActor.run {
                                         guard owner.generation == token, owner.translationEpoch == epoch, owner.running,
                                               !Task.isCancelled, owner.translationRequests[requestID] != nil else { return }
+                                        if !pair.chinese.isEmpty { receivedChinese = true }
                                         owner.showTranslation(pair.chinese, job: job, complete: false, cleanedEnglish: pair.english, sequence: requestSequence)
                                     }
                                 })
@@ -931,6 +985,7 @@ struct SettingsView: View {
                 Button("回看最近 30 秒") { model.openHistory?() }
             }
             Toggle("显示侧边冰块快捷按钮（点击录音，右键回看，可拖动）", isOn: $model.quickVisible)
+            CloudPrivacyControls(model: model)
             ArchiveControls(model: model, archive: model.archive)
             fontControls
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 15) {
@@ -967,7 +1022,7 @@ struct SettingsView: View {
             Divider()
             Text("底部字幕完全穿透点击，不拦截下方按钮。通过设置或菜单栏回看最近 30 秒，回看窗口可拖动。关闭设置后，菜单栏的字幕图标仍可控制应用。")
                 .font(.callout).foregroundStyle(.secondary)
-            Text("WhisperKit/Apple 本机处理语音；OpenAI/Deepgram 语音来源会发送音频。AI 整理/翻译发送文字、最近四句上下文和课程术语。Wispr 单独负责其录音，GlacierCore 和 Wispr 均支持完整 Word 归档。Mac API key 存入本机私有配置（明文、仅当前用户可读），更新 App 不会覆盖。")
+            Text("WhisperKit 与 Apple 本机处理语音。选择云服务并同意后，音频或文字、最近上下文和课程术语会发送到该服务。Mac API key 保存在应用自己的私有配置中（明文、仅当前用户可读）；商店版位于沙盒容器内，更新不会覆盖。")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding(26)
@@ -984,14 +1039,17 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 12) {
             Picker("转录来源", selection: $model.inputMode) {
                 ForEach(SpeechProvider.allCases) { Text($0.title).tag($0.rawValue) }
+                #if !APP_STORE
                 Text("Wispr Note · 跟随转录窗口").tag("wispr")
+                #endif
                 Text("Apple · SpeechAnalyzer（macOS 26）").tag("apple")
             }.disabled(model.running || model.busy)
             if model.inputMode == "whisperkit" {
                 Picker("本机语音模型", selection: $model.whisperModel) {
                     ForEach(WhisperModel.allCases) { Text($0.title).tag($0) }
                 }.disabled(model.running || model.busy)
-                Text("Mac 默认 Turbo，优先保证课堂识别质量。首次使用需要下载及预热；Base 适合低内存设备。课程术语也会提供给本机识别器。")
+                Button("下载 / 准备语音模型（不录音）") { model.prepareSpeechModel() }.disabled(model.running || model.busy)
+                Text("商店版默认 Base，适合快速启动；Turbo 更大。首次使用需联网下载并准备模型，之后可离线使用。课程术语也会提供给本机识别器。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if model.inputMode == "deepgram" {
@@ -1004,6 +1062,7 @@ struct SettingsView: View {
                 Text("此来源会把麦克风音频发送到所选云服务。OpenAI 语音使用下方保存的 OpenAI key；Deepgram 需要独立 key。")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            #if !APP_STORE
             if model.inputMode == "wispr" {
                 Text("打开 Wispr Transcript 并滚到底部，再连接字幕。点击侧边冰块或「开始录音」会联动 Wispr New note，再次点击停止。结束后自动归档。请勿最小化转录窗口。")
                     .font(.caption).foregroundStyle(.secondary)
@@ -1013,9 +1072,10 @@ struct SettingsView: View {
                 }
                 if !model.connectionStatus.isEmpty { Text(model.connectionStatus).font(.caption).foregroundStyle(.secondary) }
             }
+            #endif
             Picker("中文翻译", selection: $model.translationMode) {
                 Text("AI · 上下文逐句翻译").tag("gpt")
-                Text("Apple · 本机翻译（备用）").tag("apple")
+                Text("Apple · 本机翻译（默认，无需 key）").tag("apple")
             }.disabled(model.running || model.busy)
             if model.translationMode == "gpt" {
                 Picker("AI 服务", selection: $model.provider) {
@@ -1222,6 +1282,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @main
 enum Main {
     @MainActor static func main() {
+        #if APP_STORE
+        if CommandLine.arguments.contains("--verify-store-environment") {
+            do { try StoreEnvironmentCheck.run(); exit(0) }
+            catch { fputs("FAIL: sandbox storage smoke: \(error.localizedDescription)\n", stderr); exit(1) }
+        }
+        #endif
         let delegate = AppDelegate()
         let app = NSApplication.shared
         app.delegate = delegate

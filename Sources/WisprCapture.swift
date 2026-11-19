@@ -1,5 +1,8 @@
 import AppKit
+
+#if !APP_STORE
 import ApplicationServices
+#endif
 
 struct WisprSnapshot: Sendable {
     let meeting: String
@@ -7,6 +10,7 @@ struct WisprSnapshot: Sendable {
     let recording: Bool?
 }
 
+#if !APP_STORE
 // Reads only the open Wispr Meeting Recorder's transcript accessibility subtree.
 // Uses public accessibility controls; full export temporarily uses the clipboard.
 // No account tokens, historical files or private APIs.
@@ -393,3 +397,19 @@ extension WisprReader {
         throw CaptionError.message("尚未确认 Wispr 停止，请检查 Wispr 窗口。")
     }
 }
+
+#else
+// Store builds contain no accessibility automation or clipboard scraping.
+actor WisprReader {
+    static let shared = WisprReader()
+    private func unavailable() -> CaptionError { .message("Wispr control is unavailable in the App Store edition. Choose WhisperKit.") }
+    func snapshot() throws -> WisprSnapshot { throw unavailable() }
+    func recordingState() throws -> Bool? { throw unavailable() }
+    func startNote() throws { throw unavailable() }
+    func stopNote() throws { throw unavailable() }
+    func fullTranscript(expectedMeeting: String) throws -> String { throw unavailable() }
+}
+@MainActor final class WisprCapture {
+    func stop() {}
+}
+#endif

@@ -72,3 +72,11 @@ If a task needs broader changes, revise its scope manually instead of bypassing 
 - Evaluate end-to-end microphone-to-caption latency and domain terminology accuracy with consented lecture samples.
 - PDF export, editable course glossary presets, stable Developer ID signing/notarization.
 - Broader iOS feature parity, signed distribution and real-device validation; no App Store release is shipped.
+
+## Store distribution (manual work, excluded from daily bot)
+
+- [x] STORE-01: Add native GlacierMac/GlacierMacDev targets, configurable signing/bundle IDs, sandbox entitlements and compile-time removal of Wispr automation.
+- [x] STORE-02: Isolate nightly developer installs and app data from official Glacier; refuse official-app replacement.
+- [x] STORE-03: Add original generated Mac/iOS icon assets, privacy manifest, bundled policy/support and static Pages source.
+- [x] STORE-04: Add recipient/data-specific cloud consent, Apple-first captions, cancellable model preparation and scoped-folder persistence.
+- [ ] STORE-05: Validate a distribution-signed Archive, privacy report, TestFlight first-install/whole-lecture tests and published support URLs after developer enrollment. Simulator/portable checks alone do not complete this item.

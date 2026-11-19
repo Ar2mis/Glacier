@@ -31,6 +31,8 @@ must not edit workflows, these rules, its own script, checks, or credential hand
 
 The launch agent must only sync a clean `main` checkout with no local-only commits.
 Never stash, discard, or automatically publish arbitrary local work. Build a detached
-snapshot, verify it, and replace `/Applications/Glacier.app` only after success.
+snapshot, verify it, and replace `/Applications/Glacier Dev.app` only after success.
+The updater must never replace `/Applications/Glacier.app`; that path is reserved
+for signed App Store/TestFlight installations. Dev bundles use `.dev` identity.
 Do not terminate an active lecture to update the app. Keep the prior installed app
 on build failure. Never embed credentials in scripts, plists, logs, or git remotes.

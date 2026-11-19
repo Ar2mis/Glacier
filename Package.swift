@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "Glacier",
-    platforms: [.macOS("26.0"), .iOS(.v17)],
+    platforms: [.macOS("26.0"), .iOS("18.0")],
     products: [
         .library(name: "GlacierCore", type: .static, targets: ["GlacierCore"]),
         .executable(name: "Glacier", targets: ["GlacierApp"]),

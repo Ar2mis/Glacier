@@ -1,0 +1,4 @@
+// Copy to Signing.local.xcconfig (ignored). Team ID is not a password.
+DEVELOPMENT_TEAM = YOURTEAMID
+GLACIER_MAC_BUNDLE_ID = com.ziruochen.glacier
+GLACIER_IOS_BUNDLE_ID = com.ziruochen.glacier.ios

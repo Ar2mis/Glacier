@@ -45,13 +45,24 @@ class AtomicInstallerTests(unittest.TestCase):
         spec = importlib.util.spec_from_file_location('installer', SCRIPT.parent/'install_app_atomic.py')
         module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
         with tempfile.TemporaryDirectory() as directory:
-            stage, destination = Path(directory)/'stage.app', Path(directory)/'Glacier.app'
+            stage, destination = Path(directory)/'stage.app', Path(directory)/'Glacier Dev.app'
             for app,version in [(stage,'new'),(destination,'old')]:
                 (app/'Contents').mkdir(parents=True)
-                with (app/'Contents/Info.plist').open('wb') as stream: plistlib.dump({'CFBundleIdentifier':'local.ar2mis.lecturecaptions'},stream)
+                with (app/'Contents/Info.plist').open('wb') as stream: plistlib.dump({'CFBundleIdentifier':'com.ziruochen.glacier.dev'},stream)
                 (app/'version').write_text(version)
             module.install(stage,destination)
             self.assertEqual((destination/'version').read_text(),'new'); self.assertEqual((stage/'version').read_text(),'old')
             with (stage/'Contents/Info.plist').open('wb') as stream: plistlib.dump({'CFBundleIdentifier':'unrelated'},stream)
             with self.assertRaises(ValueError): module.install(stage,destination)
             self.assertEqual((destination/'version').read_text(),'new')
+
+class StoreIsolationTests(unittest.TestCase):
+    def test_installer_refuses_official_path_even_if_bundle_id_is_dev(self):
+        import importlib.util
+        spec=importlib.util.spec_from_file_location('store_installer',SCRIPT.parent/'install_app_atomic.py')
+        module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            with self.assertRaisesRegex(ValueError, 'official Glacier.app is protected'):
+                module.install(root/'stage.app',root/'Glacier.app')
+            self.assertFalse((root/'Glacier.app').exists())

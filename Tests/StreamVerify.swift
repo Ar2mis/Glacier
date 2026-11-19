@@ -32,6 +32,7 @@ actor Updates {
 }
 @main enum StreamVerify {
     static func main() async throws {
+        setbuf(stdout, nil)
         var passed = [String]()
         func check(_ condition: Bool, _ name: String) { precondition(condition, name); passed.append(name); print("PASS: \(name)") }
         let reference = ISO8601DateFormatter().date(from: "1994-11-06T08:49:30Z")!
@@ -105,9 +106,8 @@ actor Updates {
                 let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "text/event-stream"])!
                 client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
                 // Stream 3400 CJK chars in approx 400-byte packets, then send [DONE]
-                let chunk = "汉".data(using: .utf8)!  // One char, but three bytes
                 for _ in 0..<3400 {
-                    client?.urlProtocol(self, didLoad: "data: {\"type\":\"response.output_text.delta\",\"delta\":\"汉\"}\n".data(using: .utf8)!)
+                    client?.urlProtocol(self, didLoad: "data: {\"type\":\"response.output_text.delta\",\"delta\":\"汉\"}\n\n".data(using: .utf8)!)
                 }
                 client?.urlProtocol(self, didLoad: "data: [DONE]\n\n".data(using: .utf8)!)
                 client?.urlProtocolDidFinishLoading(self)
@@ -129,6 +129,13 @@ actor Updates {
             check(error.kind == .incomplete && error.message.contains("内容超出预期大小"), "Oversize SSE stream throws typed/sanitized size error")
         }
         check(gotError, "Oversize SSE stream forcibly failed")
+        var malformed = TranslationStreamState()
+        do {
+            _ = try malformed.accept("{private transcript", provider: .openai)
+            preconditionFailure("Malformed JSON accepted")
+        } catch let failure as TranslationFailure {
+            check(failure.kind == .incomplete && !failure.message.contains("private"), "malformed SSE JSON returns a sanitized typed failure")
+        }
         var finalOnly = TranslationStreamState()
         _ = try finalOnly.accept(#"{"type":"response.completed","response":{"output":[{"type":"message","content":[{"type":"output_text","text":"最终译文"}]}]}}"#, provider: .openai)
         let finalResult = try finalOnly.result()

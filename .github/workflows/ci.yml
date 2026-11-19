@@ -22,6 +22,8 @@ jobs:
           python-version: '3.12'
       - name: Build, syntax checks and offline tests
         run: bash scripts/ci.sh
+      - name: Build and inspect sandboxed Mac App Store target
+        run: bash scripts/verify-store.sh
   ios:
     runs-on: macos-26
     timeout-minutes: 30

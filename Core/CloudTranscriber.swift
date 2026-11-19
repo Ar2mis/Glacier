@@ -41,6 +41,7 @@ public enum CloudASRParser {
     public init(provider: SpeechProvider, key: String) { self.provider = provider; self.key = key }
     public func start(status: @escaping @MainActor (String) -> Void) async throws -> AsyncThrowingStream<TranscriptEvent, Error> {
         stop()
+        try CloudConsent.require(provider == .deepgram ? "deepgram" : "openai", .audio)
         guard !key.isEmpty else { throw GlacierCoreError.message("Save this speech provider's API key first.") }
         let audio = try await microphone.start()
         let (stream, continuation) = AsyncThrowingStream<TranscriptEvent, Error>.makeStream(bufferingPolicy: .bufferingOldest(64))

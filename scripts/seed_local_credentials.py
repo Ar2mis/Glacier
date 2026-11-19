@@ -35,8 +35,8 @@ def valid(value):
     return isinstance(value, str) and 0 < len(value) < 4096 and not any(c.isspace() for c in value)
 
 
-def seed(repo, home, environment):
-    folder = home / 'Library/Application Support/Glacier'
+def seed(repo, home, environment, dev=False):
+    folder = home / 'Library/Application Support' / ('Glacier Dev' if dev else 'Glacier')
     path = folder / 'config.json'
     if folder.is_symlink() or path.is_symlink():
         raise ValueError('Credential storage must not be a symlink')
@@ -54,7 +54,17 @@ def seed(repo, home, environment):
             return 'Existing saved key preserved.'
         if 'openai' in data.get('disabled', []):
             return 'Key was explicitly removed; automatic migration skipped.'
-        key = environment.get('OPENAI_API_KEY', '').strip()
+        # One-time migration into the isolated Dev app; never touch a sandbox container.
+        legacy_key = None
+        legacy = home / 'Library/Application Support/Glacier/config.json'
+        if dev and legacy.is_file() and not legacy.is_symlink() and not legacy.parent.is_symlink():
+            try:
+                prior = json.loads(legacy.read_text())
+                if isinstance(prior, dict) and isinstance(prior.get('credentials'), dict) and 'openai' not in prior.get('disabled', []):
+                    candidate = prior['credentials'].get('openai')
+                    if valid(candidate): legacy_key = candidate
+            except (OSError, ValueError, TypeError): pass
+        key = legacy_key or environment.get('OPENAI_API_KEY', '').strip()
         if not valid(key):
             key = next((value for candidate in [home/'.zshenv', home/'.zprofile', home/'.zshrc', repo/'.env']
                         if (value := literal_key(candidate))), None)
@@ -76,10 +86,11 @@ def seed(repo, home, environment):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--dev', action='store_true', help='Seed the isolated development app only')
     parser.add_argument('--repo', type=Path, default=Path(__file__).resolve().parents[1])
     args = parser.parse_args()
     try:
-        print(seed(args.repo, Path.home(), os.environ))
+        print(seed(args.repo, Path.home(), os.environ, dev=args.dev))
     except (OSError, ValueError, TypeError):
         # Never include parser/source errors: they can contain credentials.
         print('Credential migration could not complete; existing config was preserved. Check Glacier Settings.')

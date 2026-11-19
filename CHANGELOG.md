@@ -1,5 +1,28 @@
 # Changelog
 
+
+## 2026-11-18 — Mac App Store preparation (0.7.0 / 12)
+
+- Added native sandboxed GlacierMac and isolated GlacierMacDev targets, configurable
+  bundle/team settings, shared icon/privacy resources and iOS 18 Translation readiness.
+- Compiled Wispr accessibility control out of store builds; added per-provider
+  audio/text consent checks before network requests. Apple local translation is the
+  new-install default; cloud captions can fall back after a 2.5-second first-token wait.
+- Moved model initialization off the decoder actor, made preparation waiters
+  cancellable/bounded, serialized inference across restarts, and added explicit
+  prepare-without-recording controls. Full text and Stop-tail handling remain tested.
+- Added security-scoped export folders, an offline English Word export, original
+  geometric ice-cube assets, privacy/support documents and generated static HTML.
+- Local updater now installs only Glacier Dev.app with a .dev identity and separate
+  data; official Glacier.app is protected by the atomic installer guard.
+- Local verification passed: 36 Python checks, 36 SSE checks, 42 session
+  simulations, Core/caption/soak checks and independent full/offline Word readers.
+  APP_STORE compilation, signed-entitlement/AX-symbol inspection, real sandbox
+  credential persistence and an actual Apple Translation UI smoke also passed.
+  The current local toolchain is Command Line Tools; hosted Xcode target builds
+  are separate from these checks. Distribution signing, App Store validation and real classroom/device acceptance
+  remain release gates; no approval or measured end-to-end latency guarantee is claimed.
+
 ## Unreleased
 
 ### DI-06: Honor dated translation retry instructions (2026-11-17)

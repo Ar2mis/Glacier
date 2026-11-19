@@ -44,3 +44,20 @@ class CredentialMigrationTests(unittest.TestCase):
         self.config.symlink_to(target)
         with self.assertRaises(ValueError): seed.seed(self.repo,self.home,{'OPENAI_API_KEY':'fixture-new'})
         self.assertEqual(target.read_text(),'preserve')
+
+class DevCredentialIsolationTests(unittest.TestCase):
+    def test_dev_seed_copies_existing_key_without_mutating_official_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home=Path(directory); repo=home/'repo'; repo.mkdir()
+            legacy=home/'Library/Application Support/Glacier/config.json'
+            legacy.parent.mkdir(parents=True)
+            original=json.dumps({'version':1,'credentials':{'openai':'fixture-existing'},'disabled':[]})
+            legacy.write_text(original)
+            seed.seed(repo,home,{},dev=True)
+            dev=home/'Library/Application Support/Glacier Dev/config.json'
+            self.assertEqual(json.loads(dev.read_text())['credentials']['openai'],'fixture-existing')
+            self.assertEqual(legacy.read_text(),original)
+            self.assertEqual(stat.S_IMODE(dev.stat().st_mode),0o600)
+            dev.write_text(json.dumps({'version':1,'credentials':{},'disabled':['openai']}))
+            seed.seed(repo,home,{'OPENAI_API_KEY':'fixture-shell'},dev=True)
+            self.assertEqual(json.loads(dev.read_text())['credentials'],{})

@@ -1,0 +1,5 @@
+// Set these in the ignored Signing.local.xcconfig or override in Xcode/CLI.
+GLACIER_MAC_BUNDLE_ID = com.ziruochen.glacier
+GLACIER_IOS_BUNDLE_ID = com.ziruochen.glacier.ios
+DEVELOPMENT_TEAM =
+#include? "Signing.local.xcconfig"

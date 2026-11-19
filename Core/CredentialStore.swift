@@ -5,7 +5,7 @@ import LocalAuthentication
 public enum CredentialStore {
     private static let lock = NSRecursiveLock()
     private static func query(_ provider: String) -> [String: Any] {
-        [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "local.ar2mis.lecturecaptions.\(provider)", kSecAttrAccount as String: "api-key"]
+        [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: (AppDistribution.isStore || AppDistribution.isDevelopment ? "\(AppDistribution.credentialService).\(provider)" : "local.ar2mis.lecturecaptions.\(provider)"), kSecAttrAccount as String: "api-key"]
     }
     private static func withoutPrompts<T>(_ allowInteraction: Bool = false, _ operation: () throws -> T) throws -> T {
         lock.lock(); defer { lock.unlock() }

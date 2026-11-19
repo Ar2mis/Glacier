@@ -7,8 +7,7 @@ public struct CredentialConfig {
     public let url: URL
     public init(url: URL) { self.url = url }
     public static var defaultURL: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Glacier/config.json")
+        AppDistribution.supportDirectory.appendingPathComponent("config.json")
     }
     private func access<T>(_ operation: (inout [String: Any]) throws -> (T, Bool)) throws -> T {
         let fm = FileManager.default, folder = url.deletingLastPathComponent()

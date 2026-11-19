@@ -1,36 +1,670 @@
 // !$*UTF8*$!
 {
-    archiveVersion = 1;
-    classes = {};
-    objectVersion = 56;
-    objects = {
-        A00000000000000000000040 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/GPTTranslator.swift; sourceTree = "<group>";};
-        A00000000000000000000050 = {isa = PBXBuildFile; fileRef = A00000000000000000000040;};
-        A00000000000000000000041 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/LectureArchive.swift; sourceTree = "<group>";};
-        A00000000000000000000051 = {isa = PBXBuildFile; fileRef = A00000000000000000000041;};
-        A00000000000000000000042 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/WordExporter.swift; sourceTree = "<group>";};
-        A00000000000000000000052 = {isa = PBXBuildFile; fileRef = A00000000000000000000042;};
-        A00000000000000000000001 = {isa = PBXProject; attributes = {LastUpgradeCheck = 2600;}; buildConfigurationList = A00000000000000000000002; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base); mainGroup = A00000000000000000000003; packageReferences = (A00000000000000000000020); productRefGroup = A00000000000000000000004; projectDirPath = ""; projectRoot = ""; targets = (A00000000000000000000010);};
-        A00000000000000000000002 = {isa = XCConfigurationList; buildConfigurations = (A00000000000000000000030, A00000000000000000000031); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
-        A00000000000000000000003 = {isa = PBXGroup; children = (A00000000000000000000040, A00000000000000000000041, A00000000000000000000042, A00000000000000000000005, A00000000000000000000009, A00000000000000000000004); sourceTree = "<group>";};
-        A00000000000000000000004 = {isa = PBXGroup; children = (A00000000000000000000006); name = Products; sourceTree = "<group>";};
-        A00000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOS/GlacierMobileApp.swift; sourceTree = "<group>";};
-        A00000000000000000000006 = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Glacier.app; sourceTree = BUILT_PRODUCTS_DIR;};
-        A00000000000000000000007 = {isa = PBXBuildFile; fileRef = A00000000000000000000005;};
-        A00000000000000000000008 = {isa = PBXBuildFile; productRef = A00000000000000000000021;};
-        A00000000000000000000009 = {isa = PBXFileReference; lastKnownFileType = text; path = THIRD_PARTY_NOTICES.txt; sourceTree = "<group>";};
-        A00000000000000000000015 = {isa = PBXBuildFile; fileRef = A00000000000000000000009;};
-        A00000000000000000000010 = {isa = PBXNativeTarget; buildConfigurationList = A00000000000000000000011; buildPhases = (A00000000000000000000012, A00000000000000000000013, A00000000000000000000014); buildRules = (); dependencies = (); name = GlacierIOS; packageProductDependencies = (A00000000000000000000021); productName = Glacier; productReference = A00000000000000000000006; productType = "com.apple.product-type.application";};
-        A00000000000000000000011 = {isa = XCConfigurationList; buildConfigurations = (A00000000000000000000032, A00000000000000000000033); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
-        A00000000000000000000012 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000007, A00000000000000000000050, A00000000000000000000051, A00000000000000000000052); runOnlyForDeploymentPostprocessing = 0;};
-        A00000000000000000000013 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000008); runOnlyForDeploymentPostprocessing = 0;};
-        A00000000000000000000014 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000015); runOnlyForDeploymentPostprocessing = 0;};
-        A00000000000000000000020 = {isa = XCLocalSwiftPackageReference; relativePath = .;};
-        A00000000000000000000021 = {isa = XCSwiftPackageProductDependency; package = A00000000000000000000020; productName = GlacierCore;};
-        A00000000000000000000030 = {isa = XCBuildConfiguration; name = Debug; buildSettings = {CLANG_ENABLE_MODULES = YES; SDKROOT = iphoneos; SWIFT_VERSION = 5.0; IPHONEOS_DEPLOYMENT_TARGET = 17.0; DEBUG_INFORMATION_FORMAT = dwarf; SWIFT_OPTIMIZATION_LEVEL = "-Onone";};};
-        A00000000000000000000031 = {isa = XCBuildConfiguration; name = Release; buildSettings = {CLANG_ENABLE_MODULES = YES; SDKROOT = iphoneos; SWIFT_VERSION = 5.0; IPHONEOS_DEPLOYMENT_TARGET = 17.0; DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym"; SWIFT_OPTIMIZATION_LEVEL = "-O";};};
-        A00000000000000000000032 = {isa = XCBuildConfiguration; name = Debug; buildSettings = {CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 11; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = Glacier; INFOPLIST_KEY_UIFileSharingEnabled = YES; INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES; INFOPLIST_KEY_NSMicrophoneUsageDescription = "Transcribe your lecture. WhisperKit and Apple process audio on device; selected cloud speech providers receive microphone audio."; INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Recognize English speech when you select Apple Speech."; INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES; INFOPLIST_KEY_UILaunchScreen_Generation = YES; MARKETING_VERSION = 0.6.5; PRODUCT_BUNDLE_IDENTIFIER = com.ar2mis.glacier.ios; PRODUCT_NAME = Glacier; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SUPPORTS_MACCATALYST = NO; TARGETED_DEVICE_FAMILY = "1,2";};};
-        A00000000000000000000033 = {isa = XCBuildConfiguration; name = Release; buildSettings = {CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 11; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = Glacier; INFOPLIST_KEY_UIFileSharingEnabled = YES; INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES; INFOPLIST_KEY_NSMicrophoneUsageDescription = "Transcribe your lecture. WhisperKit and Apple process audio on device; selected cloud speech providers receive microphone audio."; INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Recognize English speech when you select Apple Speech."; INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES; INFOPLIST_KEY_UILaunchScreen_Generation = YES; MARKETING_VERSION = 0.6.5; PRODUCT_BUNDLE_IDENTIFIER = com.ar2mis.glacier.ios; PRODUCT_NAME = Glacier; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SUPPORTS_MACCATALYST = NO; TARGETED_DEVICE_FAMILY = "1,2";};};
+    "archiveVersion" = 1;
+    "classes" = {
     };
-    rootObject = A00000000000000000000001;
+    "objectVersion" = 56;
+    "objects" = {
+        "BC4A71180870F7945155FBB0" = {
+            "isa" = "XCLocalSwiftPackageReference";
+            "relativePath" = ".";
+        };
+        "D290061FDEC82C5D5AF1056A" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "sourcecode.swift";
+            "path" = "Sources/App.swift";
+            "sourceTree" = "<group>";
+        };
+        "5979BD8B23AAD5F44B13267A" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "D290061FDEC82C5D5AF1056A";
+        };
+        "A5681002BA0CE1132CB900A2" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "sourcecode.swift";
+            "path" = "Sources/ArchiveViews.swift";
+            "sourceTree" = "<group>";
+        };
+        "C1748B7B07CBA64DE4502A7A" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "A5681002BA0CE1132CB900A2";
+        };
+        "64E74EC26246A0B2B2448E78" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "sourcecode.swift";
+            "path" = "Sources/CaptionHistory.swift";
+            "sourceTree" = "<group>";
+        };
+        "115C74507C3CFB78B7ED2938" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "64E74EC26246A0B2B2448E78";
+        };
+        "F111087BC723BD834DA53917" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "sourcecode.swift";
+            "path" = "Sources/CaptionText.swift";
+            "sourceTree" = "<group>";
+        };
+        "E9190DA02F3732F8E7716E70" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "F111087BC723BD834DA53917";
+        };
+        "761245F54F35A7580BBED61D" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "sourcecode.swift";
+            "path" = "Sources/ExportFolder.swift";
+            "sourceTree" = "<group>";
+        };
+        "EA684AB6BEE32B2114306E8D" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "761245F54F35A7580BBED61D";
+        };
+        "8D534B8DA167B2FF1E542E6D" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "sourcecode.swift";
+            "path" = "Sources/GPTTranslator.swift";
+            "sourceTree" = "<group>";
+        };
+        "F44B83017768AFE3DBA4426E" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "8D534B8DA167B2FF1E542E6D";
+        };
+        "F5023AA84CF197E3228DE7CC" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "sourcecode.swift";
+            "path" = "Sources/GlacierTheme.swift";
+            "sourceTree" = "<group>";
+        };
+        "A9DB288E25C697B600B62B10" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "F5023AA84CF197E3228DE7CC";
+        };
+        "A6C3FCE8088E06E9AC8131F8" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "sourcecode.swift";
+            "path" = "Sources/IceLauncher.swift";
+            "sourceTree" = "<group>";
+        };
+        "4EE473980161AC36CF1B2CE8" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "A6C3FCE8088E06E9AC8131F8";
+        };
+        "B571D1629ADAF94C9EB238CB" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "sourcecode.swift";
+            "path" = "Sources/LectureArchive.swift";
+            "sourceTree" = "<group>";
+        };
+        "24AF77EA6BC8DDE58A6B9F36" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "B571D1629ADAF94C9EB238CB";
+        };
+        "80D818C9A4931B62A1310057" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "sourcecode.swift";
+            "path" = "Sources/SentenceFeed.swift";
+            "sourceTree" = "<group>";
+        };
+        "42CE0EC8441349C35C8E073A" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "80D818C9A4931B62A1310057";
+        };
+        "02DC10B38C7AE10BF11A71C8" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "sourcecode.swift";
+            "path" = "Sources/Simulation.swift";
+            "sourceTree" = "<group>";
+        };
+        "0CABFFC85C622510B84C6FFB" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "02DC10B38C7AE10BF11A71C8";
+        };
+        "404495B74C6DBCE8EC25695E" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "sourcecode.swift";
+            "path" = "Sources/SpeechCapture.swift";
+            "sourceTree" = "<group>";
+        };
+        "8691B5ABC7247DC028A177E3" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "404495B74C6DBCE8EC25695E";
+        };
+        "1FDF6AB268B20E8B787EA7A5" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "sourcecode.swift";
+            "path" = "Sources/StoreEnvironmentCheck.swift";
+            "sourceTree" = "<group>";
+        };
+        "AB0F9275A2C6D6D0E742BCB0" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "1FDF6AB268B20E8B787EA7A5";
+        };
+        "359C611858B6D6B9DD95EF2E" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "sourcecode.swift";
+            "path" = "Sources/StoreSettings.swift";
+            "sourceTree" = "<group>";
+        };
+        "19BE216BDF25E7E555E7381A" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "359C611858B6D6B9DD95EF2E";
+        };
+        "25CAA52EFEF1F67A8CA79AD9" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "sourcecode.swift";
+            "path" = "Sources/WisprCapture.swift";
+            "sourceTree" = "<group>";
+        };
+        "FBB42A412799A6D617EEF6E6" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "25CAA52EFEF1F67A8CA79AD9";
+        };
+        "9A668522D046ED9BE9D292C5" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "sourcecode.swift";
+            "path" = "Sources/WordExporter.swift";
+            "sourceTree" = "<group>";
+        };
+        "D89BF361E9052D39E8ADE4DB" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "9A668522D046ED9BE9D292C5";
+        };
+        "B8FA18644A594FE11B39A425" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "folder.assetcatalog";
+            "path" = "Resources/Assets.xcassets";
+            "sourceTree" = "<group>";
+        };
+        "111ECC6503F5B84327C89A2A" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "B8FA18644A594FE11B39A425";
+        };
+        "392BDC3F55CEC1885F16285B" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "text.xml";
+            "path" = "Resources/PrivacyInfo.xcprivacy";
+            "sourceTree" = "<group>";
+        };
+        "9E01FAD19D1AD2DBD63DA2DF" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "392BDC3F55CEC1885F16285B";
+        };
+        "4B4A543750E785985AF67250" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "text";
+            "path" = "THIRD_PARTY_NOTICES.txt";
+            "sourceTree" = "<group>";
+        };
+        "B67D489DA5DB2E03A05A1C0C" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "4B4A543750E785985AF67250";
+        };
+        "087FB1B87D060EE82D55D6C3" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "net.daringfireball.markdown";
+            "path" = "PRIVACY_POLICY.md";
+            "sourceTree" = "<group>";
+        };
+        "177C7AA3B6772D3705EA596D" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "087FB1B87D060EE82D55D6C3";
+        };
+        "7FED06B3D2ECF83451897871" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "net.daringfireball.markdown";
+            "path" = "SUPPORT.md";
+            "sourceTree" = "<group>";
+        };
+        "ADD0FF0C537A2C98FA68E18A" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "7FED06B3D2ECF83451897871";
+        };
+        "BA4B01FA6618F44ED38C9EEC" = {
+            "isa" = "XCSwiftPackageProductDependency";
+            "package" = "BC4A71180870F7945155FBB0";
+            "productName" = "GlacierCore";
+        };
+        "B92A5FFCCC31F41C043028DB" = {
+            "isa" = "PBXBuildFile";
+            "productRef" = "BA4B01FA6618F44ED38C9EEC";
+        };
+        "A82CC4A3649710A3DE8FB123" = {
+            "isa" = "PBXSourcesBuildPhase";
+            "buildActionMask" = 2147483647;
+            "files" = ("5979BD8B23AAD5F44B13267A", "C1748B7B07CBA64DE4502A7A", "115C74507C3CFB78B7ED2938", "E9190DA02F3732F8E7716E70", "EA684AB6BEE32B2114306E8D", "F44B83017768AFE3DBA4426E", "A9DB288E25C697B600B62B10", "4EE473980161AC36CF1B2CE8", "24AF77EA6BC8DDE58A6B9F36", "42CE0EC8441349C35C8E073A", "0CABFFC85C622510B84C6FFB", "8691B5ABC7247DC028A177E3", "AB0F9275A2C6D6D0E742BCB0", "19BE216BDF25E7E555E7381A", "FBB42A412799A6D617EEF6E6", "D89BF361E9052D39E8ADE4DB",);
+            "runOnlyForDeploymentPostprocessing" = 0;
+        };
+        "6ED0209B72FFBC985FD104C7" = {
+            "isa" = "PBXFrameworksBuildPhase";
+            "buildActionMask" = 2147483647;
+            "files" = ("B92A5FFCCC31F41C043028DB",);
+            "runOnlyForDeploymentPostprocessing" = 0;
+        };
+        "18A3529251BA3DE44FC2DF51" = {
+            "isa" = "PBXResourcesBuildPhase";
+            "buildActionMask" = 2147483647;
+            "files" = ("111ECC6503F5B84327C89A2A", "9E01FAD19D1AD2DBD63DA2DF", "B67D489DA5DB2E03A05A1C0C", "177C7AA3B6772D3705EA596D", "ADD0FF0C537A2C98FA68E18A",);
+            "runOnlyForDeploymentPostprocessing" = 0;
+        };
+        "0C75F610F8E22D907820BFA0" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "text.xcconfig";
+            "path" = "Config/MacStore.xcconfig";
+            "sourceTree" = "<group>";
+        };
+        "B96CF68830CEA540C59EA473" = {
+            "isa" = "XCBuildConfiguration";
+            "name" = "Debug";
+            "baseConfigurationReference" = "0C75F610F8E22D907820BFA0";
+            "buildSettings" = {
+                "SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+                "DEBUG_INFORMATION_FORMAT" = "dwarf";
+            };
+        };
+        "8C508240FE5DE5817D4AD451" = {
+            "isa" = "XCBuildConfiguration";
+            "name" = "Release";
+            "baseConfigurationReference" = "0C75F610F8E22D907820BFA0";
+            "buildSettings" = {
+                "SWIFT_OPTIMIZATION_LEVEL" = "-O";
+                "DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
+            };
+        };
+        "F10CDE10F2C4383752982D29" = {
+            "isa" = "XCConfigurationList";
+            "buildConfigurations" = ("B96CF68830CEA540C59EA473", "8C508240FE5DE5817D4AD451",);
+            "defaultConfigurationIsVisible" = 0;
+            "defaultConfigurationName" = "Release";
+        };
+        "B0F33FCD9F66C88DCD699EB3" = {
+            "isa" = "PBXFileReference";
+            "explicitFileType" = "wrapper.application";
+            "includeInIndex" = 0;
+            "path" = "Glacier.app";
+            "sourceTree" = "BUILT_PRODUCTS_DIR";
+        };
+        "92D6EA50B32121E8641DE63F" = {
+            "isa" = "PBXNativeTarget";
+            "name" = "GlacierMac";
+            "productName" = "Glacier";
+            "productType" = "com.apple.product-type.application";
+            "productReference" = "B0F33FCD9F66C88DCD699EB3";
+            "buildConfigurationList" = "F10CDE10F2C4383752982D29";
+            "buildPhases" = ("A82CC4A3649710A3DE8FB123", "6ED0209B72FFBC985FD104C7", "18A3529251BA3DE44FC2DF51",);
+            "buildRules" = ();
+            "dependencies" = ();
+            "packageProductDependencies" = ("BA4B01FA6618F44ED38C9EEC",);
+        };
+        "63CC73AEA3BC12F645E7F948" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "D290061FDEC82C5D5AF1056A";
+        };
+        "AC33F8DEAADEAFB77FD9CB86" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "A5681002BA0CE1132CB900A2";
+        };
+        "618C28AE393E10BC5AD2210A" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "64E74EC26246A0B2B2448E78";
+        };
+        "163198F24D54AACEF3EEE54D" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "F111087BC723BD834DA53917";
+        };
+        "1FF39D09BA2AED06A12C97BD" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "761245F54F35A7580BBED61D";
+        };
+        "20136A18DE7308892F3A91F7" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "8D534B8DA167B2FF1E542E6D";
+        };
+        "05B52305213FBC50A21156D0" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "F5023AA84CF197E3228DE7CC";
+        };
+        "A73A2D1E055758BCC957809D" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "A6C3FCE8088E06E9AC8131F8";
+        };
+        "EEEB4F1786F937906134C7D2" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "B571D1629ADAF94C9EB238CB";
+        };
+        "FBEFECA9D48388DEA879F4FC" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "80D818C9A4931B62A1310057";
+        };
+        "8861CB8061E50B5AB3DFD918" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "02DC10B38C7AE10BF11A71C8";
+        };
+        "5C3D996CD1DFA25099508DCF" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "404495B74C6DBCE8EC25695E";
+        };
+        "3706D691CC7AEA8847E22791" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "1FDF6AB268B20E8B787EA7A5";
+        };
+        "44DD84E4390149D53063A94D" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "359C611858B6D6B9DD95EF2E";
+        };
+        "7D9FC76EABCD360F1800E60E" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "25CAA52EFEF1F67A8CA79AD9";
+        };
+        "EC9B09A383BCDDDB345B64FB" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "9A668522D046ED9BE9D292C5";
+        };
+        "600FF3F370DF3DA65C9CF9E6" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "B8FA18644A594FE11B39A425";
+        };
+        "5999EDABC110A762C240E987" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "392BDC3F55CEC1885F16285B";
+        };
+        "AF7DE77D18CEB3DD4792D0EA" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "4B4A543750E785985AF67250";
+        };
+        "F73113E772D999359D84C9AC" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "087FB1B87D060EE82D55D6C3";
+        };
+        "BCD7D1C57CC6BC5995A242B8" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "7FED06B3D2ECF83451897871";
+        };
+        "E67A9CDABE9A75B077881757" = {
+            "isa" = "XCSwiftPackageProductDependency";
+            "package" = "BC4A71180870F7945155FBB0";
+            "productName" = "GlacierCore";
+        };
+        "6632C678BB6CD80149C4B966" = {
+            "isa" = "PBXBuildFile";
+            "productRef" = "E67A9CDABE9A75B077881757";
+        };
+        "ABDD1F6AC58FFBB59A1C364F" = {
+            "isa" = "PBXSourcesBuildPhase";
+            "buildActionMask" = 2147483647;
+            "files" = ("63CC73AEA3BC12F645E7F948", "AC33F8DEAADEAFB77FD9CB86", "618C28AE393E10BC5AD2210A", "163198F24D54AACEF3EEE54D", "1FF39D09BA2AED06A12C97BD", "20136A18DE7308892F3A91F7", "05B52305213FBC50A21156D0", "A73A2D1E055758BCC957809D", "EEEB4F1786F937906134C7D2", "FBEFECA9D48388DEA879F4FC", "8861CB8061E50B5AB3DFD918", "5C3D996CD1DFA25099508DCF", "3706D691CC7AEA8847E22791", "44DD84E4390149D53063A94D", "7D9FC76EABCD360F1800E60E", "EC9B09A383BCDDDB345B64FB",);
+            "runOnlyForDeploymentPostprocessing" = 0;
+        };
+        "9C9430E0C7A016B1EA71690C" = {
+            "isa" = "PBXFrameworksBuildPhase";
+            "buildActionMask" = 2147483647;
+            "files" = ("6632C678BB6CD80149C4B966",);
+            "runOnlyForDeploymentPostprocessing" = 0;
+        };
+        "0F1D66D1D059607D8AECB5A9" = {
+            "isa" = "PBXResourcesBuildPhase";
+            "buildActionMask" = 2147483647;
+            "files" = ("600FF3F370DF3DA65C9CF9E6", "5999EDABC110A762C240E987", "AF7DE77D18CEB3DD4792D0EA", "F73113E772D999359D84C9AC", "BCD7D1C57CC6BC5995A242B8",);
+            "runOnlyForDeploymentPostprocessing" = 0;
+        };
+        "DAED257A4189BC45EF439CAD" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "text.xcconfig";
+            "path" = "Config/MacDev.xcconfig";
+            "sourceTree" = "<group>";
+        };
+        "1B9549EE48F9C0E077DBFA8F" = {
+            "isa" = "XCBuildConfiguration";
+            "name" = "Debug";
+            "baseConfigurationReference" = "DAED257A4189BC45EF439CAD";
+            "buildSettings" = {
+                "SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+                "DEBUG_INFORMATION_FORMAT" = "dwarf";
+            };
+        };
+        "CA55D99A1EA2E83E8AD6C158" = {
+            "isa" = "XCBuildConfiguration";
+            "name" = "Release";
+            "baseConfigurationReference" = "DAED257A4189BC45EF439CAD";
+            "buildSettings" = {
+                "SWIFT_OPTIMIZATION_LEVEL" = "-O";
+                "DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
+            };
+        };
+        "CF868509A72302BBE7D7644C" = {
+            "isa" = "XCConfigurationList";
+            "buildConfigurations" = ("1B9549EE48F9C0E077DBFA8F", "CA55D99A1EA2E83E8AD6C158",);
+            "defaultConfigurationIsVisible" = 0;
+            "defaultConfigurationName" = "Release";
+        };
+        "9D58D64C19B38D9365EA9425" = {
+            "isa" = "PBXFileReference";
+            "explicitFileType" = "wrapper.application";
+            "includeInIndex" = 0;
+            "path" = "Glacier Dev.app";
+            "sourceTree" = "BUILT_PRODUCTS_DIR";
+        };
+        "A5F38A4F2DC82CA620F1E86F" = {
+            "isa" = "PBXNativeTarget";
+            "name" = "GlacierMacDev";
+            "productName" = "Glacier Dev";
+            "productType" = "com.apple.product-type.application";
+            "productReference" = "9D58D64C19B38D9365EA9425";
+            "buildConfigurationList" = "CF868509A72302BBE7D7644C";
+            "buildPhases" = ("ABDD1F6AC58FFBB59A1C364F", "9C9430E0C7A016B1EA71690C", "0F1D66D1D059607D8AECB5A9",);
+            "buildRules" = ();
+            "dependencies" = ();
+            "packageProductDependencies" = ("E67A9CDABE9A75B077881757",);
+        };
+        "D95A79CF359E9ABC96108802" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "sourcecode.swift";
+            "path" = "iOS/GlacierMobileApp.swift";
+            "sourceTree" = "<group>";
+        };
+        "8DBA1DE92CDC4EC541980E73" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "D95A79CF359E9ABC96108802";
+        };
+        "9C743C34CFBDD7F41EF934CB" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "8D534B8DA167B2FF1E542E6D";
+        };
+        "E366A4B3741DCA31A626D0CA" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "B571D1629ADAF94C9EB238CB";
+        };
+        "F2E73C33E2968DD7675FEE01" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "9A668522D046ED9BE9D292C5";
+        };
+        "B1E19AD2E9220C6CD32B2EEF" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "B8FA18644A594FE11B39A425";
+        };
+        "E7EC616DEDD7CDBAF021C90D" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "392BDC3F55CEC1885F16285B";
+        };
+        "6838007DA68CA57A44AEC9A4" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "4B4A543750E785985AF67250";
+        };
+        "42365C19F34BB925A00E12E7" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "087FB1B87D060EE82D55D6C3";
+        };
+        "A69821E1E4E4CE613BA2BF8F" = {
+            "isa" = "PBXBuildFile";
+            "fileRef" = "7FED06B3D2ECF83451897871";
+        };
+        "28D5A5F240CA6C8D1761C3C5" = {
+            "isa" = "XCSwiftPackageProductDependency";
+            "package" = "BC4A71180870F7945155FBB0";
+            "productName" = "GlacierCore";
+        };
+        "E1DDC030A6DF45B759265520" = {
+            "isa" = "PBXBuildFile";
+            "productRef" = "28D5A5F240CA6C8D1761C3C5";
+        };
+        "F0E26D7D1B375DA420C6FBA8" = {
+            "isa" = "PBXSourcesBuildPhase";
+            "buildActionMask" = 2147483647;
+            "files" = ("8DBA1DE92CDC4EC541980E73", "9C743C34CFBDD7F41EF934CB", "E366A4B3741DCA31A626D0CA", "F2E73C33E2968DD7675FEE01",);
+            "runOnlyForDeploymentPostprocessing" = 0;
+        };
+        "9BC614798D38A205816C378C" = {
+            "isa" = "PBXFrameworksBuildPhase";
+            "buildActionMask" = 2147483647;
+            "files" = ("E1DDC030A6DF45B759265520",);
+            "runOnlyForDeploymentPostprocessing" = 0;
+        };
+        "72D894A163C9CAB2D7A31C09" = {
+            "isa" = "PBXResourcesBuildPhase";
+            "buildActionMask" = 2147483647;
+            "files" = ("B1E19AD2E9220C6CD32B2EEF", "E7EC616DEDD7CDBAF021C90D", "6838007DA68CA57A44AEC9A4", "42365C19F34BB925A00E12E7", "A69821E1E4E4CE613BA2BF8F",);
+            "runOnlyForDeploymentPostprocessing" = 0;
+        };
+        "0A1245A8E422376420CDD247" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "text.xcconfig";
+            "path" = "Config/iOS.xcconfig";
+            "sourceTree" = "<group>";
+        };
+        "79624CD33CC5173B94F252B2" = {
+            "isa" = "XCBuildConfiguration";
+            "name" = "Debug";
+            "baseConfigurationReference" = "0A1245A8E422376420CDD247";
+            "buildSettings" = {
+                "SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+                "DEBUG_INFORMATION_FORMAT" = "dwarf";
+            };
+        };
+        "DC96C06BB264CD17ACFCCE09" = {
+            "isa" = "XCBuildConfiguration";
+            "name" = "Release";
+            "baseConfigurationReference" = "0A1245A8E422376420CDD247";
+            "buildSettings" = {
+                "SWIFT_OPTIMIZATION_LEVEL" = "-O";
+                "DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
+            };
+        };
+        "CE7B47DE0BAC2BC75F2C20C5" = {
+            "isa" = "XCConfigurationList";
+            "buildConfigurations" = ("79624CD33CC5173B94F252B2", "DC96C06BB264CD17ACFCCE09",);
+            "defaultConfigurationIsVisible" = 0;
+            "defaultConfigurationName" = "Release";
+        };
+        "4C69A0317D14BAC4FA3ABF92" = {
+            "isa" = "PBXFileReference";
+            "explicitFileType" = "wrapper.application";
+            "includeInIndex" = 0;
+            "path" = "Glacier.app";
+            "sourceTree" = "BUILT_PRODUCTS_DIR";
+        };
+        "9D52C48585F9D0A66FBFB07A" = {
+            "isa" = "PBXNativeTarget";
+            "name" = "GlacierIOS";
+            "productName" = "Glacier";
+            "productType" = "com.apple.product-type.application";
+            "productReference" = "4C69A0317D14BAC4FA3ABF92";
+            "buildConfigurationList" = "CE7B47DE0BAC2BC75F2C20C5";
+            "buildPhases" = ("F0E26D7D1B375DA420C6FBA8", "9BC614798D38A205816C378C", "72D894A163C9CAB2D7A31C09",);
+            "buildRules" = ();
+            "dependencies" = ();
+            "packageProductDependencies" = ("28D5A5F240CA6C8D1761C3C5",);
+        };
+        "67E24BBFAD93DAA5154614DB" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "text.xcconfig";
+            "path" = "Config/Signing.xcconfig";
+            "sourceTree" = "<group>";
+        };
+        "B5B89880D0AE0D513F7FF55C" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "text.xcconfig";
+            "path" = "Config/Shared.xcconfig";
+            "sourceTree" = "<group>";
+        };
+        "CB9CB0C7CDBDFA5D927A2A2A" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "text.plist.xml";
+            "path" = "Config/Mac-Info.plist";
+            "sourceTree" = "<group>";
+        };
+        "1825D3F15E879F91DF58FF36" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "text.plist.xml";
+            "path" = "Config/iOS-Info.plist";
+            "sourceTree" = "<group>";
+        };
+        "74451A008A07675BCFE04456" = {
+            "isa" = "PBXFileReference";
+            "lastKnownFileType" = "text.plist.xml";
+            "path" = "Config/GlacierMac.entitlements";
+            "sourceTree" = "<group>";
+        };
+        "0A3E27B8CA818264D75C8D81" = {
+            "isa" = "PBXGroup";
+            "name" = "Products";
+            "children" = ("B0F33FCD9F66C88DCD699EB3", "9D58D64C19B38D9365EA9425", "4C69A0317D14BAC4FA3ABF92",);
+            "sourceTree" = "<group>";
+        };
+        "0D6E4079E36703EBD37C0072" = {
+            "isa" = "PBXGroup";
+            "children" = ("D290061FDEC82C5D5AF1056A", "A5681002BA0CE1132CB900A2", "64E74EC26246A0B2B2448E78", "F111087BC723BD834DA53917", "761245F54F35A7580BBED61D", "8D534B8DA167B2FF1E542E6D", "F5023AA84CF197E3228DE7CC", "A6C3FCE8088E06E9AC8131F8", "B571D1629ADAF94C9EB238CB", "80D818C9A4931B62A1310057", "02DC10B38C7AE10BF11A71C8", "404495B74C6DBCE8EC25695E", "1FDF6AB268B20E8B787EA7A5", "359C611858B6D6B9DD95EF2E", "25CAA52EFEF1F67A8CA79AD9", "9A668522D046ED9BE9D292C5", "B8FA18644A594FE11B39A425", "392BDC3F55CEC1885F16285B", "4B4A543750E785985AF67250", "087FB1B87D060EE82D55D6C3", "7FED06B3D2ECF83451897871", "0C75F610F8E22D907820BFA0", "DAED257A4189BC45EF439CAD", "D95A79CF359E9ABC96108802", "0A1245A8E422376420CDD247", "67E24BBFAD93DAA5154614DB", "B5B89880D0AE0D513F7FF55C", "CB9CB0C7CDBDFA5D927A2A2A", "1825D3F15E879F91DF58FF36", "74451A008A07675BCFE04456", "0A3E27B8CA818264D75C8D81",);
+            "sourceTree" = "<group>";
+        };
+        "2B23A31EEC75B029432F2445" = {
+            "isa" = "XCBuildConfiguration";
+            "name" = "Debug";
+            "buildSettings" = {
+                "CLANG_ENABLE_MODULES" = "YES";
+                "SWIFT_VERSION" = "5.0";
+            };
+        };
+        "07CA1E69F6068DEA30A4DA6B" = {
+            "isa" = "XCBuildConfiguration";
+            "name" = "Release";
+            "buildSettings" = {
+                "CLANG_ENABLE_MODULES" = "YES";
+                "SWIFT_VERSION" = "5.0";
+            };
+        };
+        "F905B102B4F13BD6617D8EB3" = {
+            "isa" = "XCConfigurationList";
+            "buildConfigurations" = ("2B23A31EEC75B029432F2445", "07CA1E69F6068DEA30A4DA6B",);
+            "defaultConfigurationIsVisible" = 0;
+            "defaultConfigurationName" = "Release";
+        };
+        "244210E48437B6556980A702" = {
+            "isa" = "PBXProject";
+            "attributes" = {
+                "LastUpgradeCheck" = "2600";
+                "TargetAttributes" = {
+                    "92D6EA50B32121E8641DE63F" = {
+                        "SystemCapabilities" = {
+                            "com.apple.Sandbox" = {
+                                "enabled" = 1;
+                            };
+                            "com.apple.HardenedRuntime" = {
+                                "enabled" = 1;
+                            };
+                        };
+                    };
+                };
+            };
+            "buildConfigurationList" = "F905B102B4F13BD6617D8EB3";
+            "compatibilityVersion" = "Xcode 14.0";
+            "developmentRegion" = "en";
+            "hasScannedForEncodings" = 0;
+            "knownRegions" = ("en", "zh-Hans", "Base",);
+            "mainGroup" = "0D6E4079E36703EBD37C0072";
+            "packageReferences" = ("BC4A71180870F7945155FBB0",);
+            "productRefGroup" = "0A3E27B8CA818264D75C8D81";
+            "projectDirPath" = "";
+            "projectRoot" = "";
+            "targets" = ("92D6EA50B32121E8641DE63F", "A5F38A4F2DC82CA620F1E86F", "9D52C48585F9D0A66FBFB07A",);
+        };
+    };
+    "rootObject" = "244210E48437B6556980A702";
 }

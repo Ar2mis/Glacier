@@ -22,6 +22,8 @@ final class RefinerMock: URLProtocol, @unchecked Sendable {
 @main enum CoreVerify {
     static func main() async throws {
         setbuf(stdout, nil)
+        try await verifyPreparationCancellation()
+        try verifyCloudConsent()
         try verifyCredentialPersistence()
         verifyReadingPace()
         try verifyWhisperStorage()

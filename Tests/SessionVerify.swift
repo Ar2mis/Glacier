@@ -39,6 +39,9 @@ actor ConcurrentCalls {
 
 @main enum SessionVerify {
     @MainActor static func main() async throws {
+        let savedMode = UserDefaults.standard.object(forKey: "translationMode")
+        UserDefaults.standard.set("gpt", forKey: "translationMode") // This suite injects cloud operations.
+        defer { if let savedMode { UserDefaults.standard.set(savedMode, forKey: "translationMode") } else { UserDefaults.standard.removeObject(forKey: "translationMode") } }
         var passed = [String]()
         func check(_ condition: Bool, _ name: String) {
             // Optimized preconditions may omit their message; preserve it in CI logs.
@@ -333,6 +336,16 @@ actor ConcurrentCalls {
         starting.quickToggle(showSettingsOnFailure: false)
         await waitUntil("startup failure visible at ice") { !startupError.isEmpty }
         check(startupError.contains("无法开始") && !starting.running && !starting.preparingCapture, "startup failures are surfaced without opening Settings or falsely recording")
+
+        let slowCloud = CaptionModel(simulation: true, localTranslation: { "本机接替：" + $0 }, operation: { source, _, _, _ in
+            try await Task.sleep(for: .seconds(15)); return "late " + source
+        })
+        slowCloud.translationMode = "gpt"
+        let began = Date()
+        slowCloud.receive(snapshot("Cloud first token never arrives."))
+        await waitUntil("slow first-token fallback") { slowCloud.chinese == "本机接替：Cloud first token never arrives." }
+        check(Date().timeIntervalSince(began) < 5, "installed Apple fallback bypasses a stalled first cloud token")
+        slowCloud.receive(snapshot("", active: false))
 
         let report: [String: Any] = ["tested_at": ISO8601DateFormatter().string(from: Date()), "microphone_used": false,
             "real_wispr_recording_started": false, "translator": "deterministic simulated service", "checks": passed, "count": passed.count]

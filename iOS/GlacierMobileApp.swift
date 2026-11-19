@@ -1,6 +1,7 @@
 import SwiftUI
 import GlacierCore
 import UIKit
+import Translation
 
 typealias CaptionError = GlacierCoreError
 
@@ -9,7 +10,11 @@ typealias CaptionError = GlacierCoreError
     @Published var whisperModel = WhisperModel(rawValue: UserDefaults.standard.string(forKey: "whisperModel") ?? "") ?? .base
     @Published var glossary = UserDefaults.standard.string(forKey: "courseVocabulary") ?? ""
     @Published var refineModel = UserDefaults.standard.string(forKey: "refineModel") ?? "gpt-4o-mini"
-    @Published var cleanup = true
+    @Published var cleanup = UserDefaults.standard.bool(forKey: "cloudCleanup")
+    @Published var translationConfig: TranslationSession.Configuration?
+    @Published var localStatus = "Apple English–Chinese translation: prepare once, then use offline."
+    private var nativeSession: TranslationSession?
+    private var stablePrefix = StableCaptionPrefix()
     @Published var openAIKey = ""
     @Published var deepgramKey = ""
     @Published var rawText = ""
@@ -41,8 +46,30 @@ typealias CaptionError = GlacierCoreError
             status = "Keys saved in this device's Keychain."
         } catch { status = error.localizedDescription }
     }
+    func prepareLocalTranslation() {
+        if translationConfig == nil { translationConfig = .init(source: .init(identifier: "en"), target: .init(identifier: "zh-Hans")) }
+        else { translationConfig?.invalidate() }
+    }
+    func useLocalSession(_ session: TranslationSession) async {
+        do {
+            try await session.prepareTranslation()
+            nativeSession = session; localStatus = "Apple translation ready · on device"
+            if running { drain(generation) }
+            // Session is valid only inside SwiftUI's translationTask lifetime.
+            defer { nativeSession = nil }
+            while !Task.isCancelled { try await Task.sleep(for: .seconds(30)) }
+        } catch is CancellationError { }
+        catch { localStatus = "Apple language pack unavailable. Connect to the internet and tap Prepare Apple Translation." }
+    }
+    func removeKeys() {
+        do { try CredentialStore.delete("openai"); try CredentialStore.delete("deepgram"); status = "Saved keys removed." }
+        catch { status = error.localizedDescription }
+    }
     func start() {
         guard !running, !busy else { return }
+        UserDefaults.standard.set(cleanup, forKey: "cloudCleanup")
+        if nativeSession == nil { prepareLocalTranslation() }
+        stablePrefix = StableCaptionPrefix()
         UserDefaults.standard.set(provider.rawValue, forKey: "speechProvider")
         UserDefaults.standard.set(whisperModel.rawValue, forKey: "whisperModel")
         UserDefaults.standard.set(glossary, forKey: "courseVocabulary")
@@ -54,8 +81,9 @@ typealias CaptionError = GlacierCoreError
         busy = true; context = []; queue = []; history = []; rawText = ""
         recording = Task {
             do {
-                let openAI = cleanup || provider == .openAI ? try CredentialStore.read("openai") : ""
-                refiner = cleanup ? TranscriptRefiner(key: openAI, model: refineModel) : nil
+                if provider.sendsAudioToCloud { try CloudConsent.require(provider == .deepgram ? "deepgram" : "openai", .audio) }
+                let openAI = provider == .openAI ? try CredentialStore.read("openai") : (try? CredentialStore.read("openai")) ?? ""
+                refiner = cleanup && !openAI.isEmpty && CloudConsent.allowed("openai", .text) ? TranscriptRefiner(key: openAI, model: refineModel) : nil
                 let key = provider == .deepgram ? try CredentialStore.read("deepgram") : openAI
                 let saved = LectureSession(course: courseName, source: provider.title, glossary: glossary,
                                            archiveModel: "gpt-4o-mini", autoArchive: autoArchive)
@@ -76,16 +104,11 @@ typealias CaptionError = GlacierCoreError
                     guard generation == token else { return }
                     if finishing { continue }
                     rawText = event.text
-                    if event.isFinal {
-                        history.append("ASR: \(event.text)")
-                        history = Array(history.suffix(200))
-                        if refiner != nil {
-                            guard queue.count < 8 else {
-                                status = "Live cleanup is behind; complete English is saved for the final Word export."
-                                continue
-                            }
-                            queue.append(event.text); drain(token)
-                        } else { caption = .init(english: event.text, chinese: "") }
+                    caption = .init(english: event.text, chinese: caption.chinese)
+                    if event.isFinal { history.append("ASR: \(event.text)"); history = Array(history.suffix(200)) }
+                    if let stable = stablePrefix.observe(event), !stable.isEmpty {
+                        // Coalesce live revisions; the full transcript remains in the journal.
+                        queue = [stable]; drain(token)
                     }
                 }
                 if generation == token && !finishing { stop() }
@@ -101,12 +124,31 @@ typealias CaptionError = GlacierCoreError
         guard translating == nil else { return }
         translating = Task {
             defer { if generation == token { translating = nil } }
-            while generation == token, !Task.isCancelled, !queue.isEmpty, let refiner {
+            while generation == token, !Task.isCancelled, !queue.isEmpty {
                 let text = queue.removeFirst()
                 do {
-                    let result = try await refiner.refine(text, glossary: glossary, context: context)
+                    let result: BilingualCaption
+                    if let refiner {
+                        do {
+                            result = try await refiner.refine(text, glossary: glossary, context: context, update: { [weak self] pair in
+                                await MainActor.run {
+                                    guard let self, self.generation == token, self.running else { return }
+                                    self.caption = .init(english: self.rawText, chinese: pair.chinese)
+                                }
+                            })
+                        } catch {
+                            guard let nativeSession else { throw error }
+                            self.refiner = nil
+                            result = .init(english: text, chinese: try await nativeSession.translate(text).targetText)
+                            status = "Cloud cleanup unavailable; switched to Apple translation."
+                        }
+                    } else if let nativeSession {
+                        result = .init(english: text, chinese: try await nativeSession.translate(text).targetText)
+                    } else {
+                        queue = [text]; status = localStatus; return
+                    }
                     guard generation == token, !Task.isCancelled else { return }
-                    caption = result
+                    caption = .init(english: rawText, chinese: result.chinese)
                     if !result.english.isEmpty { context.append(result); context = Array(context.suffix(4)) }
                     history.append("\(result.english)\n\(result.chinese)"); history = Array(history.suffix(200))
                 } catch {
@@ -189,8 +231,19 @@ struct MobileContent: View {
                     SecureField("OpenAI API key", text: $model.openAIKey).textInputAutocapitalization(.never).autocorrectionDisabled()
                     SecureField("Deepgram API key (only for Deepgram)", text: $model.deepgramKey).textInputAutocapitalization(.never).autocorrectionDisabled()
                     Button("Save keys on this device") { model.saveKeys() }
-                    Text("Cleanup sends transcript text, recent context and vocabulary to OpenAI. Turn it off for local English-only captions. Your GitHub secret is separate.").font(.caption)
+                    Button("Remove saved keys") { model.removeKeys() }
+                    Button("Prepare Apple Translation") { model.prepareLocalTranslation() }
+                    Text(model.localStatus).font(.caption)
+                    Text("Cleanup sends transcript text, recent context and vocabulary to OpenAI. Turn it off for Apple on-device bilingual captions. Apple language packs need a one-time download. Your GitHub secret is separate.").font(.caption)
                 }.disabled(model.running || model.busy)
+                Section("Cloud data sharing · optional") {
+                    Text("No cloud sharing is enabled by default. Text sharing includes transcript, course terms, context and full lecture content for study-note generation. Audio sharing sends microphone audio to the selected provider. Saving a key alone grants no consent.").font(.caption)
+                    MobileConsent("Allow text to OpenAI", provider: "openai", kind: .text)
+                    MobileConsent("Allow microphone audio to OpenAI", provider: "openai", kind: .audio)
+                    MobileConsent("Allow microphone audio to Deepgram", provider: "deepgram", kind: .audio)
+                    NavigationLink("Privacy policy") { MobilePolicy(name: "PRIVACY_POLICY") }
+                    NavigationLink("Help and support") { MobilePolicy(name: "SUPPORT") }
+                }.disabled(model.running || model.busy || model.archive.working)
                 Section("Lecture archive") {
                     TextField("Course name (optional)", text: $model.courseName).disabled(model.running || model.busy)
                     Toggle("Export Word automatically after Stop", isOn: $model.autoArchive).disabled(model.running || model.busy)
@@ -203,6 +256,7 @@ struct MobileContent: View {
                 Section { Text("Keep Glacier in the foreground. iOS captions appear inside Glacier; system-wide overlays are Mac-only. Word files are saved in Glacier’s Documents folder and can be shared below.").font(.caption) }
             }.scrollContentBackground(.hidden).background(Color.cyan.opacity(0.08)).navigationTitle("🧊 Glacier")
         }
+        .translationTask(model.translationConfig) { session in await model.useLocalSession(session) }
         .onChange(of: scenePhase) { _, phase in if phase == .background { model.stop() }; if phase == .active { model.resumeArchives() } }
     }
 }
@@ -212,8 +266,25 @@ struct MobileArchiveStatus: View {
     let disabled: Bool
     var body: some View {
         Text(archive.status).font(.caption).textSelection(.enabled)
+        Button("Export saved English Word (offline)") { archive.exportSavedEnglish() }.disabled(disabled || archive.working)
         Button("Resume saved lecture exports") { archive.recoverSavedLectures(includeManual: true) }.disabled(disabled || archive.working)
         if let url = archive.lastURL { ShareLink("Share Word document", item: url) }
+    }
+}
+
+struct MobileConsent: View {
+    let title: String
+    @AppStorage private var consent: Bool
+    init(_ title: String, provider: String, kind: CloudConsent.Kind) {
+        self.title = title; _consent = AppStorage(wrappedValue: false, CloudConsent.key(provider, kind))
+    }
+    var body: some View { Toggle(title, isOn: $consent) }
+}
+struct MobilePolicy: View {
+    let name: String
+    var body: some View {
+        ScrollView { Text(Bundle.main.url(forResource: name, withExtension: "md").flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? "https://github.com/Ar2mis/Glacier")
+            .textSelection(.enabled).padding() }
     }
 }
 

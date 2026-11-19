@@ -24,7 +24,7 @@ DAY=$(TZ=America/New_York date +%F)
 if $SCHEDULED; then
   HOUR=$(TZ=America/New_York date +%H)
   if [ "$HOUR" -lt 13 ]; then exit 0; fi
-  if [ -f "$STATE/last-success-day" ] && [ "$(cat "$STATE/last-success-day")" = "$DAY" ]; then exit 0; fi
+  if [ -f "$STATE/dev-last-success-day" ] && [ "$(cat "$STATE/dev-last-success-day")" = "$DAY" ]; then exit 0; fi
 fi
 LOCK="$STATE/lock"
 if ! mkdir "$LOCK" 2>/dev/null; then
@@ -59,37 +59,37 @@ git -c rebase.autoStash=false pull --rebase origin main
 if [ "$MODE" = sync ]; then log 'PASS: clean main synchronized'; exit 0; fi
 [ "$(uname -s)" = Darwin ] || { log 'ERROR: app installation requires macOS'; exit 1; }
 # Never source shell startup files; the helper parses literal assignments only.
-python3 "$REPO/scripts/seed_local_credentials.py" --repo "$REPO" || log 'Credential migration deferred; existing credentials retained'
+python3 "$REPO/scripts/seed_local_credentials.py" --repo "$REPO" --dev || log 'Credential migration deferred; existing credentials retained'
 REV=$(git rev-parse HEAD)
-INSTALLED=/Applications/Glacier.app
-if [ -f "$STATE/installed-revision" ] && [ "$(cat "$STATE/installed-revision")" = "$REV" ] && [ -d "$INSTALLED" ] &&
+INSTALLED="/Applications/Glacier Dev.app"
+if [ -f "$STATE/dev-installed-revision" ] && [ "$(cat "$STATE/dev-installed-revision")" = "$REV" ] && [ -d "$INSTALLED" ] &&
    [ "$(/usr/libexec/PlistBuddy -c 'Print :GlacierSourceRevision' "$INSTALLED/Contents/Info.plist" 2>/dev/null || true)" = "$REV" ]; then
   codesign --verify --deep --strict "$INSTALLED"
-  printf '%s\n' "$DAY" > "$STATE/last-success-day"
+  printf '%s\n' "$DAY" > "$STATE/dev-last-success-day"
   log "PASS: installed app already matches $REV"; exit 0
 fi
-if pgrep -x LectureCaptions >/dev/null || pgrep -x Glacier >/dev/null; then log 'SKIP: Glacier is running; install deferred'; exit 0; fi
+if pgrep -x GlacierDev >/dev/null || pgrep -x "Glacier Dev" >/dev/null; then log 'SKIP: Glacier is running; install deferred'; exit 0; fi
 SNAPSHOT="$STATE/build-$$"
 git worktree add --detach "$SNAPSHOT" "$REV"
 log "Building and verifying committed snapshot $REV"
 (cd "$SNAPSHOT" && CI=true bash scripts/ci.sh)
-codesign --verify --deep --strict "$SNAPSHOT/dist/Glacier.app"
+codesign --verify --deep --strict "$SNAPSHOT/dist/Glacier Dev.app"
 if [ -n "$(git status --porcelain --untracked-files=all)" ] || [ "$(git rev-parse HEAD)" != "$REV" ]; then
   log 'SKIP: local checkout changed during build; installed app retained'; exit 0
 fi
-if pgrep -x LectureCaptions >/dev/null || pgrep -x Glacier >/dev/null; then log 'SKIP: Glacier opened during build; installed app retained'; exit 0; fi
-STAGE="/Applications/.Glacier-stage-$$.app"
-ditto "$SNAPSHOT/dist/Glacier.app" "$STAGE"
+if pgrep -x GlacierDev >/dev/null || pgrep -x "Glacier Dev" >/dev/null; then log 'SKIP: Glacier opened during build; installed app retained'; exit 0; fi
+STAGE="/Applications/.Glacier-Dev-stage-$$.app"
+ditto "$SNAPSHOT/dist/Glacier Dev.app" "$STAGE"
 codesign --verify --deep --strict "$STAGE"
 python3 "$SNAPSHOT/scripts/install_app_atomic.py" "$STAGE" "$INSTALLED"
 if [ -d "$STAGE" ]; then
-  if [ -d "$STATE/previous.app" ]; then rm -rf "$STATE/previous.app"; fi
-  mv "$STAGE" "$STATE/previous.app"
+  if [ -d "$STATE/previous-dev.app" ]; then rm -rf "$STATE/previous-dev.app"; fi
+  mv "$STAGE" "$STATE/previous-dev.app"
 fi
 STAGE=''
 # Refresh the bootstrap for future runs without replacing this process's open file.
 cp "$SNAPSHOT/scripts/sync_and_build_local.sh" "$STATE/sync_and_build_local.sh.next"
 mv "$STATE/sync_and_build_local.sh.next" "$STATE/sync_and_build_local.sh"
-printf '%s\n' "$REV" > "$STATE/installed-revision"
-printf '%s\n' "$DAY" > "$STATE/last-success-day"
+printf '%s\n' "$REV" > "$STATE/dev-installed-revision"
+printf '%s\n' "$DAY" > "$STATE/dev-last-success-day"
 log "PASS: installed $REV at $INSTALLED (takes effect next launch)"

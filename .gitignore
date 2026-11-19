@@ -47,3 +47,9 @@ transcripts/
 .daily-improve/
 .idea/
 .vscode/
+
+# Local App Store signing overrides / archives
+Config/Signing.local.xcconfig
+*.xcarchive/
+*.ipa
+*.pkg

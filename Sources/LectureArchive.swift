@@ -78,27 +78,54 @@ typealias ArchiveJSONOperation = @Sendable (String, String) async throws -> Data
 
 @MainActor
 final class LectureArchive: ObservableObject {
-    @Published var status = "课程结束后自动归档到桌面"
+    @Published var status = "课程结束后保存全文；选择文件夹导出 Word"
     @Published var working = false
     @Published var lastURL: URL?
     private var task: Task<Void, Never>?
     private let pendingDirectory: URL
-    private let outputDirectory: URL
+    private let outputDirectory: URL?
     let lectures: LectureSessionStore
     private let operation: ArchiveJSONOperation?
     private var recoveryTask: Task<Void, Never>?
     init(pendingDirectory: URL? = nil, outputDirectory: URL? = nil,
          lectures: LectureSessionStore = LectureSessionStore(), operation: ArchiveJSONOperation? = nil) {
-        self.pendingDirectory = pendingDirectory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("听课字幕/待归档", isDirectory: true)
+        self.pendingDirectory = pendingDirectory ?? AppDistribution.supportDirectory.appendingPathComponent("PendingArchives", isDirectory: true)
         #if os(iOS)
         self.outputDirectory = outputDirectory ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Glacier", isDirectory: true)
         #else
-        self.outputDirectory = outputDirectory ?? FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]
+        self.outputDirectory = outputDirectory
         #endif
         self.lectures = lectures; self.operation = operation
         if operation == nil { lastURL = UserDefaults.standard.url(forKey: "lastArchiveURL") }
+    }
+
+    func exportSavedEnglish() {
+        guard !working else { return }
+        working = true
+        Task {
+            defer { working = false }
+            do {
+                let root = await lectures.directory
+                let sessions = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+                    .compactMap { UUID(uuidString: $0.lastPathComponent) }
+                var latest: LectureSession?
+                for id in sessions {
+                    let saved = try await lectures.session(id)
+                    if saved.ended != nil && (latest == nil || saved.created > latest!.created) { latest = saved }
+                }
+                guard let saved = latest else { throw CaptionError.message("没有已结束的课堂。") }
+                let english = try await lectures.english(saved.id)
+                let output: URL
+                #if os(macOS)
+                output = try ExportFolder.withAccess { try WordExporter.exportEnglish(english, course: saved.course, id: saved.id, directory: $0) }
+                #else
+                output = try WordExporter.exportEnglish(english, course: saved.course, id: saved.id, directory: outputDirectory!)
+                #endif
+                lastURL = output; UserDefaults.standard.set(output, forKey: "lastArchiveURL")
+                status = "英文 Word 已导出（无需云端）；完整 AI 归档仍可稍后继续。"
+            } catch { status = "导出未完成：\(error.localizedDescription)" }
+        }
     }
 
     @discardableResult
@@ -160,6 +187,7 @@ final class LectureArchive: ObservableObject {
                     let generate: ArchiveJSONOperation
                     if let operation { generate = operation }
                     else {
+                        try CloudConsent.require(provider.rawValue, .text)
                         guard let key = APIKeyStore.load(provider: provider) else {
                             throw CaptionError.message("请配置 \(provider.title) 的 API key；原文已暂存。")
                         }
@@ -215,7 +243,13 @@ final class LectureArchive: ObservableObject {
                         job.digest = digest; try persist(job)
                     }
                     status = "正在生成 Word 文档…"
-                    let output = try WordExporter.export(job, desktop: outputDirectory)
+                    let output: URL
+                    #if os(macOS)
+                    if let outputDirectory { output = try WordExporter.export(job, desktop: outputDirectory) }
+                    else { output = try ExportFolder.withAccess { try WordExporter.export(job, desktop: $0) } }
+                    #else
+                    output = try WordExporter.export(job, desktop: outputDirectory!)
+                    #endif
                     lastURL = output
                     if operation == nil { UserDefaults.standard.set(output, forKey: "lastArchiveURL") }
                     try await lectures.markExported(job.id, url: output)
