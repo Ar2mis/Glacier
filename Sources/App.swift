@@ -551,8 +551,20 @@ final class CaptionModel: ObservableObject {
             guard let self, self.generation == token else { return }
             if self.autoArchive { self.archiveMeeting(snapshot) }
         }, failure: { [weak self] message in
-            guard let self, self.generation == token else { return }
-            self.connectionStatus = message
+            guard let self else { return }
+            // Recognize terminal transcript-gap observer failure and reset observer state, allowing explicit reconnect
+            if self.generation == token {
+                self.connectionStatus = message
+                self.wisprObserving = false
+                self.running = false
+                self.wisprRecording = false
+                self.recordingActive = false
+                self.translationEpoch = UUID()
+                self.cancelTranslationWork()
+                self.queuedSentences = 0
+                self.hideCaptions()
+                self.status = message
+            }
         })
         status = "已就绪 · 在 Wispr 或冰块开始录音均可"
         #endif
