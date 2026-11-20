@@ -10,6 +10,12 @@ struct WisprSnapshot: Sendable {
     let recording: Bool?
 }
 
+@MainActor protocol WisprObserving {
+    func start(status: @escaping (String) -> Void, snapshotChanged: @escaping (WisprSnapshot) -> Void,
+               ended: @escaping (WisprSnapshot) -> Void, failure: @escaping (String) -> Void)
+    func stop()
+}
+
 #if !APP_STORE
 // Reads only the open Wispr Meeting Recorder's transcript accessibility subtree.
 // Uses public accessibility controls; full export temporarily uses the clipboard.
@@ -176,7 +182,7 @@ private struct ClipboardSnapshot: Sendable {
 }
 
 @MainActor
-final class WisprCapture {
+final class WisprCapture: WisprObserving {
     private var task: Task<Void, Never>?
     private let reader = WisprReader.shared
     func start(status: @escaping (String) -> Void, snapshotChanged: @escaping (WisprSnapshot) -> Void,
@@ -189,12 +195,10 @@ final class WisprCapture {
             var stoppedAt: Date?
             var stoppedText = ""
             var endDelivered = false
-            var transcriptGapFailure = false
             while !Task.isCancelled {
                 do {
                     let snapshot = try await reader.snapshot()
                     guard !Task.isCancelled else { return }
-                    if transcriptGapFailure { return }
                     if let meeting, !snapshot.meeting.isEmpty, snapshot.meeting != meeting {
                         // Wispr may automatically rename the current note while recording.
                         // Only reject a simultaneous segment reset, not a title update alone.
@@ -208,7 +212,6 @@ final class WisprCapture {
                     }
                     if !snapshot.meeting.isEmpty { meeting = snapshot.meeting }
                     if let lastSegmentID, let first = snapshot.segments.first?.id, first > lastSegmentID + 1 {
-                        transcriptGapFailure = true
                         failure("Wispr 窗口恢复后出现转录间隙，请重新连接以从当前进度继续。"); return
                     }
                     lastSegmentID = snapshot.segments.last?.id ?? lastSegmentID
@@ -412,7 +415,11 @@ actor WisprReader {
     func stopNote() throws { throw unavailable() }
     func fullTranscript(expectedMeeting: String) throws -> String { throw unavailable() }
 }
-@MainActor final class WisprCapture {
+@MainActor final class WisprCapture: WisprObserving {
+    func start(status: @escaping (String) -> Void, snapshotChanged: @escaping (WisprSnapshot) -> Void,
+               ended: @escaping (WisprSnapshot) -> Void, failure: @escaping (String) -> Void) {
+        failure("Wispr observation is unavailable in the App Store edition.")
+    }
     func stop() {}
 }
 #endif

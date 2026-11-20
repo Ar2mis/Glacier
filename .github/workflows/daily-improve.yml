@@ -64,6 +64,15 @@ jobs:
           if [ -f .daily-improve/proposal.json ]; then
             echo 'ready=true' >> "$GITHUB_OUTPUT"
           fi
+      - name: Preserve sanitized proposal diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: proposal-diagnostics
+          path: .daily-improve/generation.log
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: steps.generate.outputs.ready == 'true'
         with:

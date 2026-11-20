@@ -348,8 +348,11 @@ secret. Jobs separate API access, draft publication, portable verification and
 merge permissions:
 
 1. **Propose:** select the first unchecked task and send bounded tracked source
-   context to OpenAI's Responses API. One call, up to 12,000 output tokens, no
-   retry loop. `OPENAI_MODEL` defaults to `gpt-4.1`. No generated code executes.
+   context to OpenAI's Responses API. At most three calls, each up to 12,000 output
+   tokens. Missing/ambiguous replacement matches and patch whitespace errors get
+   sanitized feedback and a fresh proposal against unchanged source. Scope,
+   credential, API and other safety failures stop immediately. `OPENAI_MODEL`
+   defaults to `gpt-4.1`. No generated code executes; matching is never made fuzzy.
 2. **Open a draft:** validate exact replacements, declared file scopes, assertion
    preservation and the 400-line budget; publish the candidate before running
    checks. No roadmap completion is recorded yet. Invalid/refused proposals stop
@@ -363,6 +366,12 @@ merge permissions:
    `gh pr merge --squash --match-head-commit` for a direct conditional squash
    merge. There is no direct push/force-push to main by the daily bot and no
    `--admin` bypass. If publishing/merging fails, restore the open PR to draft.
+5. **Post-daily native checks:** the separate `Build and verify` workflow listens
+   for successful daily completion and builds the default-branch SHA captured
+   by that event, including macOS tests/sandbox and the iOS Simulator target.
+   It uses read-only permissions, no saved Git credentials or API secrets, and
+   downloads no proposal artifacts. The tested SHA is recorded in each job summary.
+   These checks run **after** merging; they are not the portable merge gate.
 
 **Automatic merging is gated by portable checks, not native application tests.**
 These checks cover shell/Python syntax, automation unit tests, scoped edits and
@@ -397,8 +406,22 @@ merging. A fresh run must verify against the new base.
    after its own successful checks, so the repository's optional **Allow auto-merge**
    setting is not required. Job-level `contents: write` and `pull-requests: write`
    permit publication and merging; verification has read-only access. Rulesets
-   and organization restrictions still apply. Bot-token merges normally do not
-   trigger another push/PR workflow; do not assume macOS CI runs after each merge.
+   and organization restrictions still apply. Bot-token pushes do not normally
+   trigger push workflows. Bot-created PR workflows can require human approval;
+   when an automatic merge closes the PR, an unapproved run may expire with no
+   jobs executed. The independent post-daily native checks avoid relying on that
+   PR run, while ordinary PR checks and their approval policy remain intact.
+
+### Reading failures
+
+- `Daily improvement` → `propose`: inspect the sanitized error and, if available,
+  the `proposal-diagnostics` artifact. A rejected proposal leaves main and the
+  roadmap unchanged. Three failed repair attempts still fail visibly.
+- `Build and verify` on a bot PR with **zero jobs** and an approval-expiry
+  annotation did not compile Swift. Check the separate `workflow_run` build of
+  main for actual native results; old expired run records are not rewritten.
+- A failed native job contains real build/test diagnostics. Portable success
+  alone is not evidence that those checks passed.
 
 Local inspection (clean, committed checkout required):
 

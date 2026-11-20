@@ -55,6 +55,77 @@ class ImprovementTests(unittest.TestCase):
     def test_valid_exact_replacements(self):
         self.assertEqual(self.validate()['Sources/Example.swift'], 'let value = 2\n')
 
+    def model_result(self, proposal=None):
+        proposal = proposal or self.proposal
+        return {key: copy.deepcopy(proposal[key]) for key in ('summary', 'edits')}
+
+    def test_generation_repairs_missing_match_without_applying_code(self):
+        bad = self.model_result()
+        bad['edits'][0]['old'] = 'invented source snippet'
+        requests = []
+        def request(body, key):
+            requests.append(body)
+            self.assertEqual(self.git('status', '--porcelain'), '')
+            self.assertEqual((self.root / 'Sources/Example.swift').read_text(), 'let value = 1\n')
+            return bad if len(requests) == 1 else self.model_result()
+        with patch.object(di, 'run_checks', side_effect=AssertionError('must not execute generated code')):
+            result = di.generate_proposal(self.root, di.next_task(self.root), 'fixture', 'dummy', request)
+        self.assertEqual(result, self.proposal)
+        self.assertEqual(len(requests), 2)
+        self.assertIn('old text matches 0 times', requests[1]['instructions'])
+        self.assertNotIn('invented source snippet', requests[1]['instructions'])
+        self.assertEqual(requests[0]['input'], requests[1]['input'])
+        self.assertEqual(self.git('status', '--porcelain'), '')
+        self.assertEqual(json.loads((self.root / '.daily-improve/proposal.json').read_text()), result)
+
+    def test_whitespace_is_repaired_before_draft_job(self):
+        bad = self.model_result()
+        bad['edits'][0]['new'] += '   '
+        with self.assertRaises(di.ProposalRepairError):
+            self.validate(dict(bad, base=self.proposal['base'], task_id='DI-01'))
+        with patch.object(di, 'call_api', side_effect=[bad, self.model_result()]) as request:
+            proposal = di.generate_proposal(self.root, di.next_task(self.root), 'fixture', 'dummy')
+        self.assertEqual(request.call_count, 2)
+        self.assertIn('whitespace', request.call_args.args[0]['instructions'])
+        di.prepare_draft(self.root, proposal)
+        self.git('diff', '--check')
+
+    def test_generation_exhaustion_keeps_main_and_completion_untouched(self):
+        bad = self.model_result()
+        bad['edits'][0]['old'] = 'not found'
+        out = self.root / '.daily-improve'
+        out.mkdir()
+        (out / 'proposal.json').write_text('stale artifact')
+        with patch.object(di, 'call_api', return_value=bad) as request:
+            with self.assertRaisesRegex(di.ImprovementError, 'exhausted'):
+                di.generate_proposal(self.root, di.next_task(self.root), 'fixture', 'dummy')
+        self.assertEqual(request.call_count, 3)
+        self.assertFalse((out / 'proposal.json').exists())
+        self.assertEqual(self.git('status', '--porcelain'), '')
+        self.assertEqual(self.git('rev-parse', 'HEAD'), self.proposal['base'])
+        self.assertIn('[ ] DI-01', (self.root / 'ROADMAP.md').read_text())
+
+    def test_generation_does_not_retry_scope_or_api_failures(self):
+        bad = self.model_result()
+        bad['edits'][0]['path'] = '.github/workflows/daily-improve.yml'
+        for outcome in [bad, di.ImprovementError('OpenAI request failed (HTTP 401); response body withheld.')]:
+            with self.subTest(outcome=type(outcome).__name__):
+                with patch.object(di, 'call_api', side_effect=[outcome]) as request:
+                    with self.assertRaises(di.ImprovementError):
+                        di.generate_proposal(self.root, di.next_task(self.root), 'fixture', 'dummy')
+                self.assertEqual(request.call_count, 1)
+                self.assertEqual(self.git('status', '--porcelain'), '')
+                self.assertFalse((self.root / '.daily-improve/proposal.json').exists())
+
+    def test_generation_refuses_a_changed_checkout(self):
+        def request(body, key):
+            (self.root / 'README.md').write_text('concurrent user change\n')
+            return self.model_result()
+        with self.assertRaises(di.ImprovementError):
+            di.generate_proposal(self.root, di.next_task(self.root), 'fixture', 'dummy', request)
+        self.assertEqual((self.root / 'README.md').read_text(), 'concurrent user change\n')
+        self.assertFalse((self.root / '.daily-improve/proposal.json').exists())
+
     def test_duplicate_eof_newlines_do_not_block_draft_or_verification(self):
         proposal = copy.deepcopy(self.proposal)
         proposal['edits'][0]['new'] = 'let value = 2\n\n'

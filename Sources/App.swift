@@ -147,7 +147,8 @@ final class CaptionModel: ObservableObject {
     @Published private(set) var drainingCore = false
     private let coreFactory: ((SpeechProvider, WhisperModel, String) -> any StreamingTranscriber)?
     private var refiner: TranscriptRefiner?
-    private let wisprCapture = WisprCapture()
+    private let wisprCapture: any WisprObserving
+    private let hasInjectedWisprObserver: Bool
     private var startTask: Task<Void, Never>?
     private var translationTask: Task<Void, Never>?
     private var translationRequests: [UUID: (job: CaptionJob, task: Task<Void, Never>)] = [:]
@@ -170,10 +171,12 @@ final class CaptionModel: ObservableObject {
     private let translationOverride: CaptionTranslationOperation?
     private let localTranslationOverride: (@Sendable (String) async throws -> String)?
     private let credentialOverride: (@Sendable () throws -> String)?
-    init(simulation: Bool = false, archive: LectureArchive? = nil, coreFactory: ((SpeechProvider, WhisperModel, String) -> any StreamingTranscriber)? = nil, localTranslation: (@Sendable (String) async throws -> String)? = nil, credential: (@Sendable () throws -> String)? = nil, operation: CaptionTranslationOperation? = nil) {
+    init(simulation: Bool = false, archive: LectureArchive? = nil, coreFactory: ((SpeechProvider, WhisperModel, String) -> any StreamingTranscriber)? = nil, wisprObserver: (any WisprObserving)? = nil, localTranslation: (@Sendable (String) async throws -> String)? = nil, credential: (@Sendable () throws -> String)? = nil, operation: CaptionTranslationOperation? = nil) {
         self.simulation = simulation
         self.archive = archive ?? LectureArchive()
         self.coreFactory = coreFactory
+        self.wisprCapture = wisprObserver ?? WisprCapture()
+        self.hasInjectedWisprObserver = wisprObserver != nil
         self.translationOverride = operation
         self.localTranslationOverride = localTranslation; self.credentialOverride = credential
         if !simulation {
@@ -538,8 +541,9 @@ final class CaptionModel: ObservableObject {
     func watchWispr() {
         #if !APP_STORE
 
-        guard inputMode == "wispr", !simulation, !wisprObserving else { return }
+        guard inputMode == "wispr", (!simulation || hasInjectedWisprObserver), !wisprObserving else { return }
         wisprObserving = true
+        generation = UUID()
         let token = generation
         wisprCapture.start(status: { [weak self] text in
             guard let self, self.generation == token else { return }
@@ -551,20 +555,16 @@ final class CaptionModel: ObservableObject {
             guard let self, self.generation == token else { return }
             if self.autoArchive { self.archiveMeeting(snapshot) }
         }, failure: { [weak self] message in
-            guard let self else { return }
-            // Recognize terminal transcript-gap observer failure and reset observer state, allowing explicit reconnect
-            if self.generation == token {
-                self.connectionStatus = message
-                self.wisprObserving = false
-                self.running = false
-                self.wisprRecording = false
-                self.recordingActive = false
-                self.translationEpoch = UUID()
-                self.cancelTranslationWork()
-                self.queuedSentences = 0
-                self.hideCaptions()
-                self.status = message
-            }
+            guard let self, self.generation == token else { return }
+            // Invalidate every callback from this observer before allowing an
+            // explicit reconnect. Observation failure never starts/stops Wispr.
+            self.generation = UUID()
+            self.wisprCapture.stop(); self.wisprObserving = false
+            self.connectionStatus = message
+            self.running = false; self.wisprRecording = false; self.recordingActive = false
+            self.finishingRecording = false
+            self.translationEpoch = UUID(); self.cancelTranslationWork()
+            self.queuedSentences = 0; self.hideCaptions(); self.status = message
         })
         status = "已就绪 · 在 Wispr 或冰块开始录音均可"
         #endif

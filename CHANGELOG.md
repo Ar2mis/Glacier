@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-11-20 — Repair daily proposal generation and verify bot merges natively
+
+- Diagnose November 15, 16 and 19 proposal failures as non-matching generated
+  replacement text. Add up to three bounded repair attempts with sanitized
+  path/count feedback and read-only patch/whitespace preflight before upload.
+  Exact matching, scope, assertion preservation, secret checks and merge policy
+  remain enforced; exhausted attempts leave main and completion metadata intact.
+- Retain sanitized generation diagnostics on failure. Add regressions for repair,
+  exhaustion, whitespace, concurrent edits and non-retryable scope/API errors.
+- Add read-only native Mac/iOS verification of the main snapshot after successful
+  daily completion. Bot PR builds can expire waiting for GitHub approval without
+  running any jobs; this independent route does not change PR approval policy or
+  claim native checks ran before the existing portable-only automatic merge.
+- Preserve the 01:30 UTC cron, scheduled-only four-hour jitter, Ubuntu gate,
+  expected base/head checks, conditional squash merge and draft restoration.
+- Repair the newly merged DI-08 tests, which accessed private CaptionModel fields
+  and manually assigned the state they purported to verify. Inject an observer
+  fixture through the actual callbacks instead. Rotate observer generations on
+  failure/reconnect, cancel failed observation and reject late callbacks without
+  starting a new Wispr recording; keep private state private and store automation disabled.
+- Verification: 42 Python tests, 50 native session simulations, 36 streaming
+  checks, shared Core/pipeline/soak and Word export checks, APP_STORE compilation,
+  signed entitlements and sandbox persistence all passed locally. A real OpenAI
+  proposal passed validation in an isolated checkout without applying it to main.
+
 
 ## 2026-11-18 — Parakeet streaming and GPT-first captions (0.7.1 / 13)
 
