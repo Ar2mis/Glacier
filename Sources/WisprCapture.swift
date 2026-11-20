@@ -189,10 +189,12 @@ final class WisprCapture {
             var stoppedAt: Date?
             var stoppedText = ""
             var endDelivered = false
+            var transcriptGapFailure = false
             while !Task.isCancelled {
                 do {
                     let snapshot = try await reader.snapshot()
                     guard !Task.isCancelled else { return }
+                    if transcriptGapFailure { return }
                     if let meeting, !snapshot.meeting.isEmpty, snapshot.meeting != meeting {
                         // Wispr may automatically rename the current note while recording.
                         // Only reject a simultaneous segment reset, not a title update alone.
@@ -206,6 +208,7 @@ final class WisprCapture {
                     }
                     if !snapshot.meeting.isEmpty { meeting = snapshot.meeting }
                     if let lastSegmentID, let first = snapshot.segments.first?.id, first > lastSegmentID + 1 {
+                        transcriptGapFailure = true
                         failure("Wispr 窗口恢复后出现转录间隙，请重新连接以从当前进度继续。"); return
                     }
                     lastSegmentID = snapshot.segments.last?.id ?? lastSegmentID

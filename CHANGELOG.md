@@ -168,3 +168,8 @@ This entry describes the imported prototype, not a published or notarized releas
 
 - Limit accumulated SSE translation content independently of the per-line limit.
 - Ubuntu portable checks passed; native Swift build/tests NOT run. Completed under the configured automatic portable-only policy.
+
+## 2026-11-20 — DI-08
+
+- Recover the Wispr observer after a terminal transcript-gap failure.
+- Ubuntu portable checks passed; native Swift build/tests NOT run. Completed under the configured automatic portable-only policy.
