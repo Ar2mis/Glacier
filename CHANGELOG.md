@@ -198,3 +198,8 @@ This entry describes the imported prototype, not a published or notarized releas
 
 - Recover the Wispr observer after a terminal transcript-gap failure.
 - Ubuntu portable checks passed; native Swift build/tests NOT run. Completed under the configured automatic portable-only policy.
+
+## 2026-11-21 — DI-09
+
+- Preserve recording state when repeated unknown Wispr observations arrive.
+- Ubuntu portable checks passed; native Swift build/tests NOT run. Completed under the configured automatic portable-only policy.

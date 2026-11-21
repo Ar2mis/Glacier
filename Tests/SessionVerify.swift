@@ -84,6 +84,32 @@ actor ConcurrentCalls {
             return "模拟译文：" + source
         }
         model.status = "API test error stays visible"
+        // regression: unknown stays invisible, preview stays open, and ongoing caption cannot be closed by repeated nil
+        model.receive(snapshot("", active: nil))
+        check(!model.running && !model.visible, "unknown (nil) input does not open overlay when stopped")
+        model.receive(snapshot("Water diffuses instantly.", active: true))
+        check(model.running && model.visible && model.english == "Water diffuses instantly.", "explicit active observation opens overlay and session")
+        // multiple nil updates cannot close active overlay or captions
+        model.receive(snapshot("Later text, still unknown.", active: nil))
+        check(model.running && model.visible && model.english == "Later text, still unknown.", "unknown observation cannot close active session")
+        model.receive(snapshot("Even later text with nil state.", active: nil))
+        check(model.running && model.visible && model.english == "Even later text with nil state.", "consecutive unknowns have no effect on visibility or state")
+        model.receive(snapshot("", active: nil))
+        check(model.running && model.visible, "still running after blank unknown")
+        // stop with explicit false closes
+        model.receive(snapshot("", active: false))
+        check(!model.running && !model.visible, "explicit stopped observation hides overlay")
+        // preview (demo) is unaffected by repeated nil
+        model.demo()
+        check(model.visible && !model.running, "demo preview is visible")
+        model.receive(snapshot("", active: nil))
+        check(model.visible && !model.running, "unknown observation does not hide intentional preview")
+        model.receive(snapshot("", active: false))
+        check(!model.visible && !model.running, "explicit stop closes preview")
+        model.receive(snapshot("", active: nil))
+        check(!model.visible && !model.running, "unknown after stop remains stopped")
+        // status and overlays are unaffected by repeated nil
+        model.status = "API test error stays visible"
         model.receive(snapshot("", active: false))
         model.receive(snapshot("", active: nil))
         check(model.status == "API test error stays visible", "idle observations preserve diagnostic status")
@@ -112,6 +138,9 @@ actor ConcurrentCalls {
         let oldObserver = observer.callbacks[0]
         oldObserver.snapshot(snapshot("Before the transcript gap."))
         check(gapModel.running && gapModel.visible, "observer fixture delivers real recording callbacks")
+        // Simulate repeated nil recordings: active session remains open
+        oldObserver.snapshot(snapshot("A new transcript arrives, unknown state.", active: nil))
+        check(gapModel.running && gapModel.visible && gapModel.english == "A new transcript arrives, unknown state.", "observer repeated unknowns preserve active session")
         oldObserver.failure("测试 transcript-gap failure")
         check(!gapModel.running && !gapModel.visible && !gapModel.wisprRecording && observer.stops == 1,
               "terminal transcript-gap observer failure resets observer state and overlay")
