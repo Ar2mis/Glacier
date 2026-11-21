@@ -587,10 +587,12 @@ final class CaptionModel: ObservableObject {
     }
     // Same ingress for real Wispr observations and deterministic simulation.
     func receive(_ snapshot: WisprSnapshot) {
+        // Preserve current session state on indeterminate observations (recording == nil)
         if let active = snapshot.recording {
             if wisprRecording && !active && autoArchive && !simulation { finishingRecording = true }
             wisprRecording = active
         }
+        // Only change active/stopped state on explicit true/false, not on unknown nil
         if snapshot.recording == true {
             if !recordingActive {
                 resetCaptionSession()
@@ -610,6 +612,12 @@ final class CaptionModel: ObservableObject {
             hideCaptions()
             if !quickBusy { recordingStopped?() }
             status = "录音已停止"
+        } else if snapshot.recording == nil {
+            // do not close or reset anything on unknown state; overlays/session remain unchanged
+            // Only update captions if an active session is running to show transcript text (possible update)
+            if running || visible {
+                displaySegments(snapshot.segments)
+            }
         }
         // Repeated stopped/unknown observations must not erase a key, test,
         // billing or connection error, or close an intentional subtitle preview.

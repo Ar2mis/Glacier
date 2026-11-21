@@ -48,7 +48,7 @@ If a task needs broader changes, revise its scope manually instead of bypassing 
 - [x] DI-08: Recover the Wispr observer after a terminal transcript-gap failure.
   - Files: Sources/App.swift, Sources/WisprCapture.swift, Tests/SessionVerify.swift
   - Acceptance: Reset observer state after terminal failure and allow an explicit reconnect; ignore callbacks from the previous observer generation; do not start a new recording.
-- [ ] DI-09: Preserve recording state when repeated unknown Wispr observations arrive.
+- [x] DI-09: Preserve recording state when repeated unknown Wispr observations arrive.
   - Files: Sources/App.swift, Tests/SessionVerify.swift
   - Acceptance: Unknown state never falsely reports stopped or hides an active caption session; test active/unknown/stopped transitions and late callbacks.
 - [ ] DI-10: Add keyboard shortcuts for opening settings and the 30-second history window.
