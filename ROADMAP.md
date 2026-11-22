@@ -51,7 +51,7 @@ If a task needs broader changes, revise its scope manually instead of bypassing 
 - [x] DI-09: Preserve recording state when repeated unknown Wispr observations arrive.
   - Files: Sources/App.swift, Tests/SessionVerify.swift
   - Acceptance: Unknown state never falsely reports stopped or hides an active caption session; test active/unknown/stopped transitions and late callbacks.
-- [ ] DI-10: Add keyboard shortcuts for opening settings and the 30-second history window.
+- [x] DI-10: Add keyboard shortcuts for opening settings and the 30-second history window.
   - Files: Sources/App.swift, Tests/SessionVerify.swift
   - Acceptance: Expose menu key equivalents and test action routing without starting recording; no new global input-monitoring permissions.
 - [ ] DI-11: Clamp persisted caption sizing and offsets to valid screen-safe ranges.

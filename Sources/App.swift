@@ -1227,9 +1227,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = NSImage(systemSymbolName: "captions.bubble", accessibilityDescription: "Glacier")
         let menu = NSMenu()
-        for (title, action, key) in [("打开设置", #selector(showSettings), ","), ("开始 / 停止录音", #selector(toggleListening), "s"), ("显示 / 隐藏字幕", #selector(toggleVisibility), "h"), ("回看最近 30 秒", #selector(showHistory), "")] {
-            let item = NSMenuItem(title: title, action: action, keyEquivalent: key); item.target = self; menu.addItem(item)
-        }
+        // Open Settings: Cmd+comma, Open History: Cmd+Shift+H; visible in menu bar.
+        let settingsItem = NSMenuItem(title: "打开设置", action: #selector(showSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        settingsItem.keyEquivalentModifierMask = [.command]
+        menu.addItem(settingsItem)
+        let listenItem = NSMenuItem(title: "开始 / 停止录音", action: #selector(toggleListening), keyEquivalent: "s")
+        listenItem.target = self
+        listenItem.keyEquivalentModifierMask = [.command]
+        menu.addItem(listenItem)
+        let toggleItem = NSMenuItem(title: "显示 / 隐藏字幕", action: #selector(toggleVisibility), keyEquivalent: "h")
+        toggleItem.target = self
+        toggleItem.keyEquivalentModifierMask = [.command]
+        menu.addItem(toggleItem)
+        let historyItem = NSMenuItem(title: "回看最近 30 秒", action: #selector(showHistory), keyEquivalent: "H")
+        historyItem.target = self
+        historyItem.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(historyItem)
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "退出 Glacier", action: #selector(quitApp), keyEquivalent: "q"); quit.target = self; menu.addItem(quit)
         statusItem.menu = menu

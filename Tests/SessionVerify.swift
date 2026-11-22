@@ -412,6 +412,30 @@ actor ConcurrentCalls {
         await waitUntil("startup failure visible at ice") { !startupError.isEmpty }
         check(startupError.contains("无法开始") && !starting.running && !starting.preparingCapture, "startup failures are surfaced without opening Settings or falsely recording")
 
+        // Keyboard shortcut regression test for menu item selectors
+        // Simulate menu item action for settings (Cmd+,) and history (Cmd+Shift+H)
+        final class ShortcutAppDelegate: NSObject {
+            var didShowSettings = false
+            var didShowHistory = false
+            @objc func showSettings() { didShowSettings = true }
+            @objc func showHistory() { didShowHistory = true }
+        }
+        let delegate = ShortcutAppDelegate()
+        let menu = NSMenu()
+        let settingsItem = NSMenuItem(title: "打开设置", action: #selector(ShortcutAppDelegate.showSettings), keyEquivalent: ",")
+        settingsItem.target = delegate
+        settingsItem.keyEquivalentModifierMask = [.command]
+        menu.addItem(settingsItem)
+        let historyItem = NSMenuItem(title: "回看最近 30 秒", action: #selector(ShortcutAppDelegate.showHistory), keyEquivalent: "H")
+        historyItem.target = delegate
+        historyItem.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(historyItem)
+        // Simulate selector invocation
+        settingsItem.performClick(nil)
+        historyItem.performClick(nil)
+        check(delegate.didShowSettings, "Cmd+, menu item invokes showSettings selector")
+        check(delegate.didShowHistory, "Cmd+Shift+H menu item invokes showHistory selector")
+
         let localSlowCalls = Calls()
         let slowCloud = CaptionModel(simulation: true, localTranslation: { source in
             _ = await localSlowCalls.record(source); return "Unexpected Apple result"

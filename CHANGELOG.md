@@ -203,3 +203,8 @@ This entry describes the imported prototype, not a published or notarized releas
 
 - Preserve recording state when repeated unknown Wispr observations arrive.
 - Ubuntu portable checks passed; native Swift build/tests NOT run. Completed under the configured automatic portable-only policy.
+
+## 2026-11-22 — DI-10
+
+- Add keyboard shortcuts for opening settings and the 30-second history window.
+- Ubuntu portable checks passed; native Swift build/tests NOT run. Completed under the configured automatic portable-only policy.
